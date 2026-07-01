@@ -5,7 +5,8 @@ import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const PUBLIC = join(ROOT, "public");
+const DIST = join(ROOT, "dist");
+const PUBLIC = existsSync(DIST) ? DIST : join(ROOT, "public");
 
 loadDotEnv(join(ROOT, ".env"));
 
@@ -85,7 +86,7 @@ async function proxyChat(req, res) {
 
   const apiKey = process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    sendJson(res, 500, { error: "后端没有配置 RELAY_API_KEY。请在 .env 里填写中转站令牌后重启服务。" });
+    sendJson(res, 500, { error: "后端没有配置 RELAY_API_KEY。请在 .env 或 Render 环境变量里填写中转站令牌。" });
     return;
   }
 
@@ -139,6 +140,12 @@ async function serveStatic(req, res) {
     res.writeHead(200, { "Content-Type": mimeTypes[extname(fullPath)] || "application/octet-stream" });
     res.end(data);
   } catch {
+    if (PUBLIC === DIST) {
+      const fallback = await readFile(join(PUBLIC, "index.html"));
+      res.writeHead(200, { "Content-Type": mimeTypes[".html"] });
+      res.end(fallback);
+      return;
+    }
     sendJson(res, 404, { error: "页面资源不存在。" });
   }
 }
@@ -163,6 +170,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Abyss Interface is running at http://localhost:${PORT}`);
+  console.log(`Static directory: ${PUBLIC}`);
   console.log(`Backend API base: ${DEFAULT_API_BASE}`);
   console.log(`Backend key configured: ${Boolean(process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY)}`);
 });
