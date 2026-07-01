@@ -161,7 +161,7 @@ const server = http.createServer(async (req, res) => {
   await serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Abyss Interface is running at http://localhost:${PORT}`);
   console.log(`Backend API base: ${DEFAULT_API_BASE}`);
   console.log(`Backend key configured: ${Boolean(process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY)}`);
