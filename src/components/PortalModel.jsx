@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-const MODEL_PATH = "/models/portal-wide.glb";
+const MODEL_PATH = "/models/premium-spaceship.glb";
 
 export default function PortalModel({ mousePosition }) {
     const groupRef = useRef(null);
@@ -25,37 +25,15 @@ export default function PortalModel({ mousePosition }) {
     useEffect(() => {
         model.scene.traverse((child) => {
             if (!child.isMesh || !child.material) return;
-            const materialName = Array.isArray(child.material)
-                ? child.material.map((item) => item?.name || "").join(" ")
-                : child.material?.name || "";
-            const meshName = child.name || "";
-
-            if (
-                materialName.includes("Center") ||
-                materialName.includes("Portal") ||
-                materialName.includes("Winter") ||
-                materialName.includes("winter") ||
-                materialName.includes("Desert") ||
-                materialName.includes("desert") ||
-                materialName.includes("Grass") ||
-                meshName.includes("Center") ||
-                meshName.includes("Portal") ||
-                meshName.includes("snow") ||
-                meshName.includes("desert") ||
-                meshName.includes("Grass")
-            ) {
-                child.visible = false;
-                return;
-            }
 
             const material = child.material.clone();
             material.side = THREE.DoubleSide;
             material.color = material.color?.clone?.() || new THREE.Color("#bffcff");
-            material.color.lerp(new THREE.Color("#e9fbff"), 0.08);
+            material.color.lerp(new THREE.Color("#dffeff"), 0.04);
             material.emissive = new THREE.Color("#227bff");
-            material.emissiveIntensity = 0.28;
+            material.emissiveIntensity = 0.16;
             material.roughness = 0.34;
-            material.metalness = 0.42;
+            material.metalness = 0.52;
             material.needsUpdate = true;
             child.material = material;
         });
@@ -72,11 +50,10 @@ export default function PortalModel({ mousePosition }) {
         <Float speed={1.1} rotationIntensity={0.08} floatIntensity={0.2}>
             <group ref={groupRef}>
                 <Center>
-                    <primitive object={model.scene} scale={model.scale} rotation={[0, Math.PI, 0]} />
+                    <primitive object={model.scene} scale={model.scale} rotation={[0.04, Math.PI * -0.15, 0]} />
                 </Center>
             </group>
         </Float>
     );
 }
 
-useGLTF.preload(MODEL_PATH);

@@ -82,5 +82,3 @@ export default function MissionPortal3D() {
     </div>
   );
 }
-
-useGLTF.preload(MODEL_PATH);
