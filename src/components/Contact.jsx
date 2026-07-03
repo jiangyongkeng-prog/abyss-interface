@@ -15,10 +15,13 @@ export default function Contact({ config }) {
       >
         <p className="eyebrow">RELAY STATION</p>
         <h2>
-          API stays quiet
+          Relay console
           <br />
-          until the world is built.
+          below the fold.
         </h2>
+        <p className="terminal-lede">
+          API 功能保留在最后一屏，视觉体验先完成，再进入可用的聊天控制台。
+        </p>
       </motion.div>
 
       <motion.div
@@ -31,8 +34,8 @@ export default function Contact({ config }) {
         <div className="terminal-cta api-dock-copy">
           <span className="api-dock-tag">BACKEND PROXY READY</span>
           <p>
-            The key is kept on the Node backend. The browser only talks to a local relay endpoint,
-            so the cinematic front-end can stay clean while the chat model remains usable.
+            密钥放在 Node 后端，浏览器只连接自己的中转接口。这样页面上线后更安全，
+            也方便以后切换模型。
           </p>
 
           <div className="api-dock-metrics">

@@ -1,4 +1,5 @@
 import { motion } from 'motion/react'
+import LogoParticleIntro from './LogoParticleIntro'
 
 function LoadingScreen({ isLeaving }) {
     return (
@@ -11,16 +12,17 @@ function LoadingScreen({ isLeaving }) {
             }}
             transition={{ duration: 0.75, ease: 'easeOut' }}
         >
+            <LogoParticleIntro />
             <div className="loading-orb"></div>
 
             <motion.div
                 className="loading-content"
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
+                transition={{ duration: 0.8, delay: 0.9, ease: 'easeOut' }}
             >
-                <p>COSMOS</p>
-                <h1>System Initializing</h1>
+                <p>SPATIAL SYSTEM</p>
+                <h1>Interface Awakening</h1>
 
                 <div className="loading-line">
                     <span></span>

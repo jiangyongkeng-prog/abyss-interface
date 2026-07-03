@@ -1,105 +1,22 @@
-import { useRef, useState } from 'react'
-import { motion, useScroll, useTransform } from 'motion/react'
-import SpaceScene from './SpaceScene'
+import { useRef, useState } from "react";
+import { motion, useMotionValue } from "motion/react";
+import SpaceScene from "./SpaceScene";
+import SpaceGateway3D from "./SpaceGateway3D";
+import SoftwareVortex from "./SoftwareVortex";
 
 function Hero() {
-    const heroRef = useRef(null)
-    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-
-    const { scrollYProgress } = useScroll({
-        target: heroRef,
-        offset: ['start start', 'end end'],
-    })
-
-    const sceneX = useTransform(
-        scrollYProgress,
-        [0, 0.28, 1],
-        ['-12vw', '0vw', '0vw'],
-    )
-
-    const sceneY = useTransform(
-        scrollYProgress,
-        [0, 0.28, 0.74, 1],
-        ['2vh', '0vh', '0vh', '5vh'],
-    )
-
-    const sceneScale = useTransform(
-        scrollYProgress,
-        [0, 0.28, 0.68, 1],
-        [0.88, 1, 1.32, 1.62],
-    )
-
-    const sceneOpacity = useTransform(
-        scrollYProgress,
-        [0, 0.78, 0.94, 1],
-        [1, 1, 0.55, 0],
-    )
-
-    const speedOpacity = useTransform(
-        scrollYProgress,
-        [0, 0.28, 0.52, 0.82],
-        [0, 0, 0.75, 0],
-    )
-
-    const speedScale = useTransform(
-        scrollYProgress,
-        [0.28, 0.82],
-        [0.7, 1.25],
-    )
-
-    const flashOpacity = useTransform(
-        scrollYProgress,
-        [0, 0.58, 0.76, 0.94],
-        [0, 0, 0.88, 0],
-    )
-
-    const flashScale = useTransform(
-        scrollYProgress,
-        [0.58, 0.82],
-        [0.35, 1.65],
-    )
-
-    const blackoutOpacity = useTransform(
-        scrollYProgress,
-        [0, 0.76, 1],
-        [0, 0, 0.96],
-    )
-
-    const introOpacity = useTransform(
-        scrollYProgress,
-        [0, 0.18],
-        [1, 0],
-    )
-
-    const centerLabelOpacity = useTransform(
-        scrollYProgress,
-        [0.22, 0.38, 0.58],
-        [0, 1, 0],
-    )
-
-    const nextOpacity = useTransform(
-        scrollYProgress,
-        [0.68, 0.84],
-        [0, 1],
-    )
-
-    const nextY = useTransform(
-        scrollYProgress,
-        [0.68, 0.84],
-        [20, 0],
-    )
+    const heroRef = useRef(null);
+    const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+    const gatewayProgress = useMotionValue(0.42);
 
     function handleMouseMove(event) {
-        const { innerWidth, innerHeight } = window
-
-        const x = (event.clientX / innerWidth - 0.5) * 2
-        const y = (event.clientY / innerHeight - 0.5) * 2
-
-        setMousePosition({ x, y })
+        const x = (event.clientX / window.innerWidth - 0.5) * 2;
+        const y = (event.clientY / window.innerHeight - 0.5) * 2;
+        setMousePosition({ x, y });
     }
 
     function handleMouseLeave() {
-        setMousePosition({ x: 0, y: 0 })
+        setMousePosition({ x: 0, y: 0 });
     }
 
     return (
@@ -110,66 +27,59 @@ function Hero() {
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
         >
-            <div className="drone-hero-pin">
+            <section className="home-station-section">
                 <SpaceScene
                     mousePosition={mousePosition}
-                    scrollYProgress={scrollYProgress}
-                    sceneX={sceneX}
-                    sceneY={sceneY}
-                    sceneScale={sceneScale}
-                    sceneOpacity={sceneOpacity}
-                    speedOpacity={speedOpacity}
-                    speedScale={speedScale}
+                    sceneX="0vw"
+                    sceneY="2vh"
+                    sceneScale={1}
+                    sceneOpacity={1}
+                    speedOpacity={0}
+                    speedScale={1}
                 />
 
-                <motion.div
-                    className="drone-flash"
-                    style={{
-                        opacity: flashOpacity,
-                        scale: flashScale,
-                    }}
+                <SpaceGateway3D
+                    mousePosition={mousePosition}
+                    scrollYProgress={gatewayProgress}
                 />
 
-                <motion.div
-                    className="drone-blackout"
-                    style={{
-                        opacity: blackoutOpacity,
-                    }}
-                />
+                <div className="home-depth-field" aria-hidden="true">
+                    {Array.from({ length: 18 }).map((_, index) => (
+                        <span key={index} style={{ "--i": index }} />
+                    ))}
+                </div>
 
                 <motion.div
                     className="drone-intro-label"
-                    style={{
-                        opacity: introOpacity,
-                    }}
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 1, delay: 0.35 }}
                 >
                     <span>SPATIAL INTERFACE</span>
-                    <strong>SCROLL TO BEGIN FLIGHT</strong>
+                    <strong>SCROLL TO ENTER ORBIT</strong>
                 </motion.div>
+            </section>
 
+            <section className="home-vortex-section">
+                <div className="home-vortex-bg" />
+                <SoftwareVortex />
                 <motion.div
-                    className="drone-center-label"
-                    style={{
-                        opacity: centerLabelOpacity,
-                    }}
+                    className="home-vortex-copy"
+                    initial={{ opacity: 0, y: 24 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.35 }}
+                    transition={{ duration: 0.75 }}
                 >
-                    <span>OBJECT LOCKED</span>
-                    <strong>CAMERA MOVING TO CORE</strong>
+                    <p className="eyebrow">SOFTWARE GRAVITY</p>
+                    <h1>ICON STORM<br />IN ORBIT</h1>
+                    <p>
+                        第二段 Home 不再出现空间基站，而是让软件图标像玻璃碎片一样围成 3D 龙卷风。
+                        它会持续转动，作为进入 Mission 前的视觉过渡。
+                    </p>
                 </motion.div>
-
-                <motion.div
-                    className="drone-next-label"
-                    style={{
-                        opacity: nextOpacity,
-                        y: nextY,
-                    }}
-                >
-                    <span>NEXT MODULE</span>
-                    <strong>MISSION CONTROL</strong>
-                </motion.div>
-            </div>
+            </section>
         </main>
-    )
+    );
 }
 
-export default Hero
+export default Hero;

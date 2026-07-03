@@ -42,13 +42,13 @@ function CameraRig({ scrollYProgress }) {
 function CosmicFlower3D({ mousePosition, scrollYProgress }) {
     return (
         <div
-            className="cosmic-flower-3d drone-flower-holder"
+            className="drone-core-3d drone-flower-holder"
             style={{
                 transform: `translate(${mousePosition.x * 8}px, ${mousePosition.y * 6}px)`,
             }}
         >
             <Canvas
-                className="cosmic-flower-3d__canvas"
+                className="drone-core-3d__canvas"
                 camera={{ position: [-0.55, 0.18, flowerModelConfig.cameraStartZ], fov: 36 }}
                 dpr={[1, 2]}
                 gl={{

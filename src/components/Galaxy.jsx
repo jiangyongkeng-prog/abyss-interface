@@ -4,22 +4,22 @@ const features = [
     {
         number: '01',
         title: 'Immersive Scroll',
-        text: 'Hero scenes, pinned sections, blackout transitions, and cinematic reveal timing.',
+        text: 'Pinned sections and cinematic reveal timing.',
     },
     {
         number: '02',
         title: '3D Visual Core',
-        text: 'GLB model loading, camera movement, floating objects, and interactive rotation.',
+        text: 'GLB loading, camera motion, and interactive rotation.',
     },
     {
         number: '03',
         title: 'Glass Interface',
-        text: 'Layered cards, soft borders, blurred panels, and futuristic control surfaces.',
+        text: 'Soft borders, blurred panels, and control surfaces.',
     },
     {
         number: '04',
         title: 'Motion System',
-        text: 'Scroll-triggered animation, staggered content, hover response, and visual rhythm.',
+        text: 'Staggered motion, hover response, and visual rhythm.',
     },
 ]
 
@@ -43,8 +43,17 @@ function Galaxy() {
                     viewport={{ once: true, amount: 0.35 }}
                     transition={{ duration: 0.85, ease: 'easeOut' }}
                 >
-                    A modular system for premium web experiences.
+                    Visual modules for a cinematic space interface.
                 </motion.h2>
+                <motion.p
+                    className="bento-lede"
+                    initial={{ opacity: 0, y: 28 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, amount: 0.35 }}
+                    transition={{ duration: 0.75, delay: 0.1, ease: 'easeOut' }}
+                >
+                    把模型、粒子、玻璃 UI 和滚动叙事拆成可复用模块，后面继续升级官网时不会乱。
+                </motion.p>
             </div>
 
             <div className="bento-grid">
@@ -63,8 +72,8 @@ function Galaxy() {
                         <span>LIVE INTERFACE</span>
                         <h3>Deep Space Control</h3>
                         <p>
-                            A futuristic dashboard layer for signal tracking, navigation,
-                            scroll response, and cinematic interface storytelling.
+                            A calm command layer for visual navigation, signal tracking,
+                            and premium product storytelling.
                         </p>
                     </div>
                 </motion.article>

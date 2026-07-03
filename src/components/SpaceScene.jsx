@@ -1,6 +1,5 @@
 import { motion } from 'motion/react'
 import MeteorShower from './MeteorShower'
-import CosmicFlower3D from './CosmicFlower3D'
 
 function SpaceScene({
                         mousePosition,
@@ -42,18 +41,6 @@ function SpaceScene({
                 }}
             >
                 <MeteorShower />
-
-                <div
-                    className="drone-scene-glow"
-                    style={{
-                        transform: `translate(calc(-50% + ${mousePosition.x * -10}px), calc(-50% + ${mousePosition.y * -8}px))`,
-                    }}
-                />
-
-                <CosmicFlower3D
-                    mousePosition={mousePosition}
-                    scrollYProgress={scrollYProgress}
-                />
 
                 <div className="orbit-wrap orbit-wrap-one">
                     <div className="orbit orbit-one"></div>

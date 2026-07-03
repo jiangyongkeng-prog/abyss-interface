@@ -23,8 +23,8 @@ export default function App() {
   });
 
   useEffect(() => {
-    const leaveTimer = setTimeout(() => setIsLeavingLoading(true), 1200);
-    const removeTimer = setTimeout(() => setIsLoading(false), 1900);
+    const leaveTimer = setTimeout(() => setIsLeavingLoading(true), 2300);
+    const removeTimer = setTimeout(() => setIsLoading(false), 3050);
     return () => {
       clearTimeout(leaveTimer);
       clearTimeout(removeTimer);
