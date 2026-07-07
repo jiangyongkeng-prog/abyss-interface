@@ -385,39 +385,74 @@ async function callGenerationApi(type, prompt) {
   const base = isImage ? IMAGE_API_BASE : VIDEO_API_BASE;
   const apiKey = isImage ? IMAGE_API_KEY : VIDEO_API_KEY;
   const model = isImage ? IMAGE_MODEL : VIDEO_MODEL;
-  const endpoint = buildApiEndpoint(base, isImage ? "/images/generations" : "/videos/generations");
 
   if (!base || !apiKey) throw new Error(`${type.toUpperCase()} API is not configured`);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(
-      isImage
-        ? { model, prompt, n: 1, size: "1024x1024" }
-        : { model, prompt }
-    )
-  });
+  const attempts = isImage
+    ? [
+        {
+          label: "images",
+          endpoint: buildApiEndpoint(base, "/images/generations"),
+          body: { model, prompt, n: 1, size: "1024x1024" }
+        }
+      ]
+    : [
+        {
+          label: "v2-video",
+          endpoint: normalizeApiBase(base).replace(/\/+$/, "") + "/v2/video/generations",
+          body: { model, prompt }
+        },
+        {
+          label: "v1-video",
+          endpoint: buildApiEndpoint(base, "/video/generations"),
+          body: { model, prompt }
+        },
+        {
+          label: "v1-videos",
+          endpoint: buildApiEndpoint(base, "/videos/generations"),
+          body: { model, prompt }
+        },
+        {
+          label: "chat-fallback",
+          endpoint: buildChatEndpoint(base),
+          body: {
+            model,
+            messages: [{ role: "user", content: prompt }],
+            stream: false
+          }
+        }
+      ];
 
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = { raw: text };
+  const errors = [];
+  for (const attempt of attempts) {
+    const response = await fetch(attempt.endpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(attempt.body)
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+
+    if (response.ok) {
+      return {
+        data: { ...data, endpoint: attempt.label },
+        resultUrl: extractResultUrl(data)
+      };
+    }
+
+    errors.push(`${attempt.label}: ${data.error?.message || data.message || text || `HTTP ${response.status}`}`);
   }
 
-  if (!response.ok) {
-    throw new Error(data.error?.message || data.message || text || `HTTP ${response.status}`);
-  }
-
-  return {
-    data,
-    resultUrl: extractResultUrl(data)
-  };
+  throw new Error(errors.join(" | "));
 }
 
 async function proxyChat(req, res) {
