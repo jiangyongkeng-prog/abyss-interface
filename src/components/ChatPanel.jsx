@@ -1,19 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { sendChat } from "../lib/chatApi.js";
 
-const STORAGE_KEY = "cosmos-relay-conversations-v1";
-
+const DEFAULT_TITLE = "New chat";
 const starterMessages = [
   {
     role: "assistant",
-    content: "Relay online. 复制中转站 API 地址和令牌后，可以在这里测试模型。"
+    content: "Relay online. Messages and generation tasks are saved to Supabase."
   }
 ];
 
-function createConversation(title = "新对话") {
+function createLocalConversation(title = DEFAULT_TITLE) {
   const now = Date.now();
   return {
-    id: `chat-${now}-${Math.random().toString(16).slice(2)}`,
+    id: `local-${now}-${Math.random().toString(16).slice(2)}`,
     title,
     createdAt: now,
     updatedAt: now,
@@ -21,16 +20,11 @@ function createConversation(title = "新对话") {
   };
 }
 
-function loadConversations() {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-  } catch {
-    // Ignore broken local data and create a fresh chat.
-  }
-
-  return [createConversation()];
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
 }
 
 function formatTime(time) {
@@ -39,17 +33,16 @@ function formatTime(time) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
-  }).format(time);
+  }).format(Number(time || Date.now()));
 }
 
 export default function ChatPanel({ config }) {
-  const initialRef = useRef(null);
-  if (!initialRef.current) initialRef.current = loadConversations();
-
-  const [conversations, setConversations] = useState(initialRef.current);
-  const [activeId, setActiveId] = useState(initialRef.current[0]?.id);
+  const [conversations, setConversations] = useState([createLocalConversation()]);
+  const [activeId, setActiveId] = useState("");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) || conversations[0],
@@ -59,42 +52,96 @@ export default function ChatPanel({ config }) {
   const messages = activeConversation?.messages || starterMessages;
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-  }, [conversations]);
+    let alive = true;
 
-  function updateActiveConversation(updater) {
+    async function loadHistory() {
+      try {
+        const data = await fetchJson("/api/conversations");
+        if (!alive) return;
+        const next = data.conversations?.length ? data.conversations : [createLocalConversation()];
+        setConversations(next);
+        setActiveId(next[0]?.id || "");
+        setHistoryError("");
+      } catch (error) {
+        if (!alive) return;
+        setHistoryError(`History failed to load: ${error.message}`);
+      } finally {
+        if (alive) setHistoryLoading(false);
+      }
+    }
+
+    loadHistory();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  function updateConversation(id, updater) {
     setConversations((current) =>
       current
-        .map((conversation) =>
-          conversation.id === activeConversation.id ? updater(conversation) : conversation
-        )
+        .map((conversation) => (conversation.id === id ? updater(conversation) : conversation))
         .sort((a, b) => b.updatedAt - a.updatedAt)
     );
   }
 
-  function handleNewConversation() {
-    const conversation = createConversation();
-    setConversations((current) => [conversation, ...current]);
-    setActiveId(conversation.id);
+  async function handleNewConversation() {
     setInput("");
+    try {
+      const data = await fetchJson("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: DEFAULT_TITLE })
+      });
+      setConversations((current) => [data.conversation, ...current]);
+      setActiveId(data.conversation.id);
+      setHistoryError("");
+    } catch (error) {
+      const conversation = createLocalConversation();
+      setConversations((current) => [conversation, ...current]);
+      setActiveId(conversation.id);
+      setHistoryError(`New chat was not saved to the database: ${error.message}`);
+    }
   }
 
-  function handleDeleteConversation(id) {
+  async function handleDeleteConversation(id) {
+    const currentConversation = activeConversation;
     setConversations((current) => {
       const next = current.filter((conversation) => conversation.id !== id);
-      const safeNext = next.length ? next : [createConversation()];
-      if (id === activeId) setActiveId(safeNext[0].id);
+      const safeNext = next.length ? next : [createLocalConversation()];
+      if (id === currentConversation?.id) setActiveId(safeNext[0].id);
       return safeNext;
     });
+
+    if (!id.startsWith("local-")) {
+      try {
+        await fetchJson(`/api/conversations/${id}`, { method: "DELETE" });
+        setHistoryError("");
+      } catch (error) {
+        setHistoryError(`Delete failed: ${error.message}`);
+      }
+    }
   }
 
-  function resetActiveChat() {
-    updateActiveConversation((conversation) => ({
+  async function resetActiveChat() {
+    if (!activeConversation) return;
+    updateConversation(activeConversation.id, (conversation) => ({
       ...conversation,
-      title: "新对话",
+      title: DEFAULT_TITLE,
       updatedAt: Date.now(),
       messages: starterMessages
     }));
+
+    if (!activeConversation.id.startsWith("local-")) {
+      try {
+        const data = await fetchJson(`/api/conversations/${activeConversation.id}/reset`, {
+          method: "POST"
+        });
+        updateConversation(activeConversation.id, () => data.conversation);
+        setHistoryError("");
+      } catch (error) {
+        setHistoryError(`Reset failed: ${error.message}`);
+      }
+    }
   }
 
   async function handleSubmit(event) {
@@ -102,11 +149,11 @@ export default function ChatPanel({ config }) {
     const content = input.trim();
     if (!content || loading || !activeConversation) return;
 
+    const conversationId = activeConversation.id;
     const nextMessages = [...messages, { role: "user", content }];
-    const nextTitle =
-      activeConversation.title === "新对话" ? content.slice(0, 18) : activeConversation.title;
+    const nextTitle = activeConversation.title === DEFAULT_TITLE ? content.slice(0, 18) : activeConversation.title;
 
-    updateActiveConversation((conversation) => ({
+    updateConversation(conversationId, (conversation) => ({
       ...conversation,
       title: nextTitle,
       updatedAt: Date.now(),
@@ -118,23 +165,29 @@ export default function ChatPanel({ config }) {
 
     try {
       let text = "";
-      await sendChat({
+      const savedConversationId = await sendChat({
+        conversationId,
         model: config.model,
         messages: nextMessages,
         onToken(token) {
           text += token;
-          updateActiveConversation((conversation) => ({
+          updateConversation(conversationId, (conversation) => ({
             ...conversation,
             updatedAt: Date.now(),
             messages: [...nextMessages, { role: "assistant", content: text }]
           }));
         }
       });
+
+      if (savedConversationId && savedConversationId !== conversationId) {
+        setActiveId(savedConversationId);
+      }
+      setHistoryError("");
     } catch (error) {
-      updateActiveConversation((conversation) => ({
+      updateConversation(conversationId, (conversation) => ({
         ...conversation,
         updatedAt: Date.now(),
-        messages: [...nextMessages, { role: "assistant", content: `调用失败：${error.message}` }]
+        messages: [...nextMessages, { role: "assistant", content: `Request failed: ${error.message}` }]
       }));
     } finally {
       setLoading(false);
@@ -143,42 +196,49 @@ export default function ChatPanel({ config }) {
 
   return (
     <article className="relay-console">
-      <aside className="relay-history" aria-label="历史对话">
+      <aside className="relay-history" aria-label="Chat history">
         <div className="relay-history__head">
           <div>
             <span>HISTORY</span>
             <strong>{conversations.length}</strong>
           </div>
-          <button type="button" onClick={handleNewConversation} aria-label="新建对话">
+          <button type="button" onClick={handleNewConversation} aria-label="New chat">
             +
           </button>
         </div>
 
         <div className="relay-history__list">
-          {conversations.map((conversation) => (
-            <button
-              className={`relay-history__item ${
-                conversation.id === activeConversation?.id ? "active" : ""
-              }`}
-              type="button"
-              key={conversation.id}
-              onClick={() => setActiveId(conversation.id)}
-            >
-              <span>{conversation.title || "新对话"}</span>
-              <small>{formatTime(conversation.updatedAt)}</small>
-              <i
-                role="button"
-                tabIndex="0"
-                aria-label="删除对话"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleDeleteConversation(conversation.id);
-                }}
+          {historyLoading ? (
+            <div className="relay-history__item">
+              <span>Loading history...</span>
+              <small>Supabase</small>
+            </div>
+          ) : (
+            conversations.map((conversation) => (
+              <button
+                className={`relay-history__item ${
+                  conversation.id === activeConversation?.id ? "active" : ""
+                }`}
+                type="button"
+                key={conversation.id}
+                onClick={() => setActiveId(conversation.id)}
               >
-                x
-              </i>
-            </button>
-          ))}
+                <span>{conversation.title || DEFAULT_TITLE}</span>
+                <small>{formatTime(conversation.updatedAt)}</small>
+                <i
+                  role="button"
+                  tabIndex="0"
+                  aria-label="Delete chat"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleDeleteConversation(conversation.id);
+                  }}
+                >
+                  x
+                </i>
+              </button>
+            ))
+          )}
         </div>
       </aside>
 
@@ -190,24 +250,38 @@ export default function ChatPanel({ config }) {
           </div>
           <div className="relay-console__actions">
             <button type="button" onClick={handleNewConversation}>
-              新对话
+              New chat
             </button>
             <button type="button" onClick={resetActiveChat}>
-              清空
+              Clear
             </button>
           </div>
         </header>
 
         <section className="relay-console__settings">
           <label>
-            API Base
-            <input value={config.apiBase || "https://ai.lalakunaozi.fun"} readOnly />
+            Chat API
+            <input value={config.apiBase || "Not configured"} readOnly />
           </label>
           <label>
-            Model
-            <input value={config.model || "gpt-4-all"} readOnly />
+            Chat Model
+            <input value={config.model || "Not configured"} readOnly />
+          </label>
+          <label>
+            Supabase
+            <input value={config.databaseConfigured ? "Connected" : "Not configured"} readOnly />
+          </label>
+          <label>
+            Image API
+            <input value={config.imageConfigured ? "Ready" : "Not configured"} readOnly />
+          </label>
+          <label>
+            Video API
+            <input value={config.videoConfigured ? "Ready" : "Not configured"} readOnly />
           </label>
         </section>
+
+        {historyError ? <p className="relay-status">{historyError}</p> : null}
 
         <section className="relay-console__messages">
           {messages.map((message, index) => (
@@ -223,10 +297,10 @@ export default function ChatPanel({ config }) {
             rows="1"
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="向你的中转站模型发送消息"
+            placeholder="Chat, generate an image, or create a video..."
           />
-          <button type="submit" disabled={loading || !input.trim()} aria-label="发送">
-            ↑
+          <button type="submit" disabled={loading || !input.trim()} aria-label="Send">
+            →
           </button>
         </form>
       </div>

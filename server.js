@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
+import pg from "pg";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, "dist");
@@ -11,8 +12,28 @@ const PUBLIC = existsSync(DIST) ? DIST : join(ROOT, "public");
 loadDotEnv(join(ROOT, ".env"));
 
 const PORT = Number(process.env.PORT || 5181);
-const DEFAULT_API_BASE = normalizeApiBase(process.env.RELAY_API_BASE || "https://ai.lalakunaozi.fun");
-const DEFAULT_MODEL = process.env.RELAY_MODEL || "gpt-4-all";
+const CHAT_API_BASE = normalizeApiBase(
+  process.env.CHAT_API_BASE || process.env.RELAY_API_BASE || "https://ai.lalakunaozi.fun"
+);
+const CHAT_API_KEY = process.env.CHAT_API_KEY || process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY || "";
+const CHAT_MODEL = process.env.CHAT_MODEL || process.env.RELAY_MODEL || "gpt-5.5";
+const IMAGE_API_BASE = normalizeApiBase(process.env.IMAGE_API_BASE || "");
+const IMAGE_API_KEY = process.env.IMAGE_API_KEY || "";
+const IMAGE_MODEL = process.env.IMAGE_MODEL || "gpt-image-2";
+const VIDEO_API_BASE = normalizeApiBase(process.env.VIDEO_API_BASE || "");
+const VIDEO_API_KEY = process.env.VIDEO_API_KEY || "";
+const VIDEO_MODEL = process.env.VIDEO_MODEL || "grok-imagine-video";
+const DATABASE_URL = process.env.DATABASE_URL || "";
+const DEFAULT_TITLE = "New chat";
+
+const { Pool } = pg;
+const pool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    })
+  : null;
+let dbReadyPromise = null;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -47,6 +68,15 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function writeSse(res, content) {
+  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+}
+
+function endSse(res) {
+  res.write("data: [DONE]\n\n");
+  res.end();
+}
+
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -68,11 +98,326 @@ function normalizeApiBase(value) {
   }
 }
 
-function buildEndpoint(value) {
-  const raw = normalizeApiBase(value || DEFAULT_API_BASE).replace(/\/+$/, "");
+function buildChatEndpoint(value = CHAT_API_BASE) {
+  const raw = normalizeApiBase(value).replace(/\/+$/, "");
   if (raw.endsWith("/chat/completions")) return raw;
   if (raw.endsWith("/v1")) return raw + "/chat/completions";
   return raw + "/v1/chat/completions";
+}
+
+function buildApiEndpoint(base, path) {
+  const raw = normalizeApiBase(base).replace(/\/+$/, "");
+  if (!raw) return "";
+  if (raw.endsWith("/v1")) return raw + path;
+  return raw + "/v1" + path;
+}
+
+function getStarterMessage() {
+  return {
+    role: "assistant",
+    content: "Relay online. Messages and generation tasks are saved to Supabase."
+  };
+}
+
+function extractTokensFromSse(text, state) {
+  state.buffer += text;
+  const lines = state.buffer.split("\n");
+  state.buffer = lines.pop() || "";
+
+  let tokens = "";
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+
+    try {
+      const json = JSON.parse(data);
+      tokens += json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content || "";
+    } catch {
+      // Ignore partial or non-OpenAI-style stream lines.
+    }
+  }
+
+  return tokens;
+}
+
+function normalizeConversation(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    createdAt: new Date(row.created_at).getTime(),
+    updatedAt: new Date(row.updated_at).getTime(),
+    messages: row.messages?.length ? row.messages : [getStarterMessage()]
+  };
+}
+
+function getLatestUserContent(messages) {
+  return messages.filter((message) => message.role === "user").at(-1)?.content || "";
+}
+
+function detectGenerationIntent(content) {
+  const text = String(content || "").toLowerCase();
+  if (/生成视频|生视频|做视频|视频|video|animate|animation/.test(text)) return "video";
+  if (/生成图片|生图|画图|画一张|图片|图像|海报|image|picture|draw|poster/.test(text)) return "image";
+  return "chat";
+}
+
+function extractResultUrl(data) {
+  if (!data || typeof data !== "object") return "";
+  if (typeof data.url === "string") return data.url;
+  if (typeof data.result_url === "string") return data.result_url;
+  if (typeof data.video_url === "string") return data.video_url;
+  if (typeof data.output === "string" && /^https?:\/\//.test(data.output)) return data.output;
+  if (Array.isArray(data.output)) {
+    const url = data.output.find((item) => typeof item === "string" && /^https?:\/\//.test(item));
+    if (url) return url;
+  }
+  const first = Array.isArray(data.data) ? data.data[0] : null;
+  if (first?.url) return first.url;
+  if (first?.b64_json) return `data:image/png;base64,${first.b64_json}`;
+  return "";
+}
+
+async function ensureDb() {
+  if (!pool) throw new Error("DATABASE_URL is not configured");
+  if (!dbReadyPromise) {
+    dbReadyPromise = (async () => {
+      await pool.query("create extension if not exists pgcrypto");
+      await pool.query(`
+        create table if not exists conversations (
+          id uuid primary key default gen_random_uuid(),
+          title text not null default 'New chat',
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `);
+      await pool.query(`
+        create table if not exists messages (
+          id uuid primary key default gen_random_uuid(),
+          conversation_id uuid not null references conversations(id) on delete cascade,
+          role text not null check (role in ('user', 'assistant', 'system')),
+          content text not null default '',
+          created_at timestamptz not null default now()
+        )
+      `);
+      await pool.query(`
+        create table if not exists generation_tasks (
+          id uuid primary key default gen_random_uuid(),
+          conversation_id uuid references conversations(id) on delete set null,
+          message_id uuid references messages(id) on delete set null,
+          type text not null check (type in ('image', 'video')),
+          status text not null default 'pending',
+          prompt text not null default '',
+          result_url text,
+          metadata jsonb not null default '{}'::jsonb,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `);
+    })();
+  }
+
+  await dbReadyPromise;
+}
+
+async function getConversation(id) {
+  await ensureDb();
+  const result = await pool.query(
+    `
+      select
+        c.id,
+        c.title,
+        c.created_at,
+        c.updated_at,
+        coalesce(
+          json_agg(
+            json_build_object(
+              'id', m.id,
+              'role', m.role,
+              'content', m.content,
+              'createdAt', extract(epoch from m.created_at) * 1000
+            )
+            order by m.created_at asc
+          ) filter (where m.id is not null),
+          '[]'::json
+        ) as messages
+      from conversations c
+      left join messages m on m.conversation_id = c.id
+      where c.id = $1
+      group by c.id
+    `,
+    [id]
+  );
+  return result.rows[0] ? normalizeConversation(result.rows[0]) : null;
+}
+
+async function listConversations() {
+  await ensureDb();
+  const result = await pool.query(`
+    select
+      c.id,
+      c.title,
+      c.created_at,
+      c.updated_at,
+      coalesce(
+        json_agg(
+          json_build_object(
+            'id', m.id,
+            'role', m.role,
+            'content', m.content,
+            'createdAt', extract(epoch from m.created_at) * 1000
+          )
+          order by m.created_at asc
+        ) filter (where m.id is not null),
+        '[]'::json
+      ) as messages
+    from conversations c
+    left join messages m on m.conversation_id = c.id
+    group by c.id
+    order by c.updated_at desc
+    limit 50
+  `);
+  return result.rows.map(normalizeConversation);
+}
+
+async function createConversation(title = DEFAULT_TITLE) {
+  await ensureDb();
+  const result = await pool.query(
+    "insert into conversations (title) values ($1) returning id, title, created_at, updated_at",
+    [title]
+  );
+  return normalizeConversation({ ...result.rows[0], messages: [] });
+}
+
+async function addMessage(conversationId, role, content) {
+  await ensureDb();
+  const result = await pool.query(
+    "insert into messages (conversation_id, role, content) values ($1, $2, $3) returning id",
+    [conversationId, role, content]
+  );
+  return result.rows[0]?.id || null;
+}
+
+async function touchConversation(conversationId, title) {
+  await ensureDb();
+  await pool.query(
+    "update conversations set title = coalesce($2, title), updated_at = now() where id = $1",
+    [conversationId, title || null]
+  );
+}
+
+async function createGenerationTask({ conversationId, messageId, type, prompt }) {
+  await ensureDb();
+  const result = await pool.query(
+    `
+      insert into generation_tasks (conversation_id, message_id, type, prompt)
+      values ($1, $2, $3, $4)
+      returning id
+    `,
+    [conversationId, messageId, type, prompt]
+  );
+  return result.rows[0]?.id || null;
+}
+
+async function updateGenerationTask(id, { status, resultUrl, metadata }) {
+  if (!id) return;
+  await ensureDb();
+  await pool.query(
+    `
+      update generation_tasks
+      set status = $2,
+          result_url = $3,
+          metadata = $4,
+          updated_at = now()
+      where id = $1
+    `,
+    [id, status, resultUrl || null, metadata || {}]
+  );
+}
+
+async function handleConversations(req, res) {
+  try {
+    if (req.method === "GET") {
+      const conversations = await listConversations();
+      sendJson(res, 200, {
+        conversations: conversations.length ? conversations : [await createConversation()]
+      });
+      return;
+    }
+
+    if (req.method === "POST") {
+      const payload = JSON.parse((await readBody(req)) || "{}");
+      sendJson(res, 201, { conversation: await createConversation(payload.title || DEFAULT_TITLE) });
+      return;
+    }
+
+    sendJson(res, 405, { error: "Method not allowed" });
+  } catch (error) {
+    sendJson(res, 500, { error: `Database operation failed: ${error.message}` });
+  }
+}
+
+async function handleConversationById(req, res, id, action) {
+  try {
+    await ensureDb();
+    if (req.method === "DELETE" && !action) {
+      await pool.query("delete from conversations where id = $1", [id]);
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && action === "reset") {
+      await pool.query("delete from messages where conversation_id = $1", [id]);
+      await touchConversation(id, DEFAULT_TITLE);
+      sendJson(res, 200, { conversation: await getConversation(id) });
+      return;
+    }
+
+    sendJson(res, 405, { error: "Method not allowed" });
+  } catch (error) {
+    sendJson(res, 500, { error: `Database operation failed: ${error.message}` });
+  }
+}
+
+async function callGenerationApi(type, prompt) {
+  const isImage = type === "image";
+  const base = isImage ? IMAGE_API_BASE : VIDEO_API_BASE;
+  const apiKey = isImage ? IMAGE_API_KEY : VIDEO_API_KEY;
+  const model = isImage ? IMAGE_MODEL : VIDEO_MODEL;
+  const endpoint = buildApiEndpoint(base, isImage ? "/images/generations" : "/videos/generations");
+
+  if (!base || !apiKey) throw new Error(`${type.toUpperCase()} API is not configured`);
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(
+      isImage
+        ? { model, prompt, n: 1, size: "1024x1024" }
+        : { model, prompt }
+    )
+  });
+
+  const text = await response.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error?.message || data.message || text || `HTTP ${response.status}`);
+  }
+
+  return {
+    data,
+    resultUrl: extractResultUrl(data)
+  };
 }
 
 async function proxyChat(req, res) {
@@ -80,48 +425,113 @@ async function proxyChat(req, res) {
   try {
     payload = JSON.parse(await readBody(req));
   } catch {
-    sendJson(res, 400, { error: "请求内容不是有效 JSON。" });
+    sendJson(res, 400, { error: "Request body is not valid JSON" });
     return;
   }
 
-  const apiKey = process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    sendJson(res, 500, { error: "后端没有配置 RELAY_API_KEY。请在 .env 或 Render 环境变量里填写中转站令牌。" });
+  if (!CHAT_API_KEY) {
+    sendJson(res, 500, { error: "CHAT_API_KEY is not configured" });
     return;
   }
 
-  const body = {
-    model: payload.model || DEFAULT_MODEL,
-    messages: payload.messages || [],
-    temperature: Number(payload.temperature ?? 0.7),
-    stream: true
-  };
+  const messages = payload.messages || [];
+  const userContent = getLatestUserContent(messages);
+  const intent = detectGenerationIntent(userContent);
+  let conversationId = payload.conversationId || "";
 
   try {
-    const upstream = await fetch(buildEndpoint(payload.apiBase), {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
+    let userMessageId = null;
+    if (pool) {
+      if (!conversationId || conversationId.startsWith("local-")) {
+        conversationId = (await createConversation()).id;
+      }
+      const currentConversation = await getConversation(conversationId);
+      const nextTitle =
+        currentConversation?.title === DEFAULT_TITLE && userContent ? userContent.slice(0, 18) : null;
+      if (userContent) userMessageId = await addMessage(conversationId, "user", userContent);
+      await touchConversation(conversationId, nextTitle);
+    }
 
-    res.writeHead(upstream.status, {
-      "Content-Type": upstream.headers.get("content-type") || "text/event-stream; charset=utf-8",
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
+      "Connection": "keep-alive",
+      "X-Conversation-Id": conversationId
     });
 
-    if (!upstream.body) {
-      res.end();
+    if (intent === "image" || intent === "video") {
+      let assistantText = "";
+      let taskId = null;
+      if (pool) {
+        taskId = await createGenerationTask({
+          conversationId,
+          messageId: userMessageId,
+          type: intent,
+          prompt: userContent
+        });
+      }
+
+      try {
+        writeSse(res, `Starting ${intent} generation...\n`);
+        const result = await callGenerationApi(intent, userContent);
+        const resultLine = result.resultUrl
+          ? `${intent === "image" ? "Image" : "Video"} generated:\n${result.resultUrl}`
+          : `${intent === "image" ? "Image" : "Video"} task submitted. Check the provider dashboard for progress.`;
+        assistantText = resultLine;
+        if (pool) await updateGenerationTask(taskId, { status: "completed", resultUrl: result.resultUrl, metadata: result.data });
+        writeSse(res, resultLine);
+      } catch (error) {
+        assistantText = `${intent} generation failed: ${error.message}`;
+        if (pool) await updateGenerationTask(taskId, { status: "failed", metadata: { error: error.message } });
+        writeSse(res, assistantText);
+      }
+
+      if (pool && assistantText) {
+        await addMessage(conversationId, "assistant", assistantText);
+        await touchConversation(conversationId);
+      }
+      endSse(res);
       return;
     }
 
-    for await (const chunk of upstream.body) res.write(chunk);
+    const upstream = await fetch(buildChatEndpoint(payload.apiBase || CHAT_API_BASE), {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${CHAT_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: payload.model || CHAT_MODEL,
+        messages,
+        temperature: Number(payload.temperature ?? 0.7),
+        stream: true
+      })
+    });
+
+    if (!upstream.body) {
+      endSse(res);
+      return;
+    }
+
+    let assistantText = "";
+    const decoder = new TextDecoder();
+    const sseState = { buffer: "" };
+    for await (const chunk of upstream.body) {
+      assistantText += extractTokensFromSse(decoder.decode(chunk, { stream: true }), sseState);
+      res.write(chunk);
+    }
+    if (pool && upstream.ok && assistantText) {
+      await addMessage(conversationId, "assistant", assistantText);
+      await touchConversation(conversationId);
+    }
     res.end();
   } catch (error) {
-    sendJson(res, 502, { error: `连接中转站失败：${error.message}` });
+    if (!res.headersSent) {
+      sendJson(res, 502, { error: `Upstream request failed: ${error.message}` });
+      return;
+    }
+    writeSse(res, `Request failed: ${error.message}`);
+    endSse(res);
   }
 }
 
@@ -131,7 +541,7 @@ async function serveStatic(req, res) {
   const fullPath = normalize(join(PUBLIC, requested));
 
   if (!fullPath.startsWith(PUBLIC)) {
-    sendJson(res, 403, { error: "禁止访问。" });
+    sendJson(res, 403, { error: "Forbidden" });
     return;
   }
 
@@ -146,17 +556,31 @@ async function serveStatic(req, res) {
       res.end(fallback);
       return;
     }
-    sendJson(res, 404, { error: "页面资源不存在。" });
+    sendJson(res, 404, { error: "Resource not found" });
   }
 }
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/api/config") {
     sendJson(res, 200, {
-      apiBase: DEFAULT_API_BASE,
-      model: DEFAULT_MODEL,
-      backendKeyConfigured: Boolean(process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY)
+      apiBase: CHAT_API_BASE,
+      model: CHAT_MODEL,
+      backendKeyConfigured: Boolean(CHAT_API_KEY),
+      databaseConfigured: Boolean(pool),
+      imageConfigured: Boolean(IMAGE_API_BASE && IMAGE_API_KEY),
+      videoConfigured: Boolean(VIDEO_API_BASE && VIDEO_API_KEY)
     });
+    return;
+  }
+
+  if (req.url === "/api/conversations") {
+    await handleConversations(req, res);
+    return;
+  }
+
+  const conversationMatch = req.url.match(/^\/api\/conversations\/([^/]+)(?:\/(reset))?$/);
+  if (conversationMatch) {
+    await handleConversationById(req, res, conversationMatch[1], conversationMatch[2]);
     return;
   }
 
@@ -171,6 +595,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Abyss Interface is running at http://localhost:${PORT}`);
   console.log(`Static directory: ${PUBLIC}`);
-  console.log(`Backend API base: ${DEFAULT_API_BASE}`);
-  console.log(`Backend key configured: ${Boolean(process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY)}`);
+  console.log(`Chat API base: ${CHAT_API_BASE}`);
+  console.log(`Chat key configured: ${Boolean(CHAT_API_KEY)}`);
+  console.log(`Image API configured: ${Boolean(IMAGE_API_BASE && IMAGE_API_KEY)}`);
+  console.log(`Video API configured: ${Boolean(VIDEO_API_BASE && VIDEO_API_KEY)}`);
+  console.log(`Database configured: ${Boolean(pool)}`);
 });
