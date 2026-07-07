@@ -165,6 +165,35 @@ function findUrlInText(value) {
   return match ? cleanGeneratedUrl(match[0]) : "";
 }
 
+function findUrlsInText(value) {
+  const matches = String(value || "").match(/(?:https?:\/\/[^\s<>"']+|\/generated\/[^\s<>"']+)/gi) || [];
+  return matches.map(cleanGeneratedUrl);
+}
+
+function isImageAssetUrl(url) {
+  return /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(?:$|\?)/i.test(url);
+}
+
+function getLatestImageUrl(messages) {
+  for (const message of [...messages].reverse()) {
+    const urls = findUrlsInText(message.content);
+    const imageUrl = [...urls].reverse().find(isImageAssetUrl);
+    if (imageUrl) return imageUrl;
+  }
+  return "";
+}
+
+function getPublicOrigin(req) {
+  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+function toPublicAssetUrl(url, req) {
+  if (!url || !url.startsWith("/")) return url;
+  return new URL(url, getPublicOrigin(req)).toString();
+}
+
 function extractResultUrl(data) {
   if (!data || typeof data !== "object") return "";
   if (typeof data.url === "string") return cleanGeneratedUrl(data.url);
@@ -389,23 +418,36 @@ async function handleConversationById(req, res, id, action) {
   }
 }
 
-async function callGenerationApi(type, prompt) {
+async function callGenerationApi(type, prompt, options = {}) {
   const isImage = type === "image";
   const base = isImage ? IMAGE_API_BASE : VIDEO_API_BASE;
   const apiKey = isImage ? IMAGE_API_KEY : VIDEO_API_KEY;
   const model = isImage ? IMAGE_MODEL : VIDEO_MODEL;
   if (!base || !apiKey) throw new Error(`${type.toUpperCase()} API is not configured`);
+  const imageUrl = options.imageUrl || "";
+  const videoMessages = imageUrl
+    ? [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: imageUrl } }
+          ]
+        }
+      ]
+    : [{ role: "user", content: prompt }];
 
   const videoBody = {
     model,
-    messages: [{ role: "user", content: prompt }],
+    messages: videoMessages,
     temperature: 0.7,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0,
     stream: false,
     seconds: 5,
-    size: "1280x720"
+    size: "1280x720",
+    ...(imageUrl ? { image_url: imageUrl, image_urls: [imageUrl] } : {})
   };
 
   const attempts = isImage
@@ -493,7 +535,8 @@ async function proxyChat(req, res) {
 
       try {
         writeSse(res, `Starting ${intent} generation...\n`);
-        const result = await callGenerationApi(intent, userContent);
+        const imageUrl = intent === "video" ? toPublicAssetUrl(getLatestImageUrl(messages), req) : "";
+        const result = await callGenerationApi(intent, userContent, { imageUrl });
         const label = intent === "image" ? "Image" : "Video";
         const resultLine = result.resultUrl ? `${label} generated:\n${result.resultUrl}` : `${label} task submitted. No URL was returned yet.`;
         assistantText = resultLine;
