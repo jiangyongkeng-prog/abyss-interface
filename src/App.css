@@ -159,6 +159,13 @@ button {
     #01050a;
 }
 
+.loading-screen.is-leaving {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(133, 239, 255, 0.08), transparent 28%),
+    radial-gradient(circle at 50% 50%, rgba(95, 125, 255, 0.08), transparent 48%),
+    #01050a;
+}
+
 .logo-particle-intro {
   position: absolute;
   inset: 0;
@@ -175,6 +182,12 @@ button {
   border: 1px solid rgba(133, 239, 255, 0.18);
   box-shadow: inset 0 0 80px rgba(133, 239, 255, 0.08), 0 0 140px rgba(95, 125, 255, 0.16);
   animation: loadingPulse 2.8s ease-in-out infinite;
+  transition: opacity 0.58s ease, transform 0.7s ease;
+}
+
+.loading-screen.is-leaving .loading-orb {
+  opacity: 0;
+  transform: scale(1.18);
 }
 
 .loading-content {
@@ -678,8 +691,8 @@ button {
   min-height: 100vh;
   padding: clamp(110px, 14vh, 170px) clamp(24px, 5vw, 72px);
   background:
-    linear-gradient(90deg, rgba(2, 7, 13, 0.94), rgba(2, 7, 13, 0.52) 54%, rgba(2, 7, 13, 0.9)),
-    url("/assets/astronaut-particle-storm.png") center / cover no-repeat;
+    linear-gradient(90deg, rgba(2, 7, 13, 0.94), rgba(2, 7, 13, 0.5) 54%, rgba(2, 7, 13, 0.9)),
+    url("/assets/deepsea-abyss-section.png") center / cover no-repeat;
 }
 
 .studio-manifesto::before {
@@ -802,20 +815,63 @@ button {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 32px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)), rgba(5, 18, 27, 0.72);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(101, 255, 239, 0.16), transparent 33%),
+    linear-gradient(180deg, rgba(1, 19, 28, 0.86), rgba(0, 7, 12, 0.96));
   box-shadow: 0 34px 120px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(20px) saturate(1.15);
+  isolation: isolate;
 }
 
 .mission-visual__image {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 62% 32%, rgba(133, 239, 255, 0.16), transparent 34%),
-    linear-gradient(180deg, rgba(2, 7, 13, 0.08), rgba(2, 7, 13, 0.82)),
-    url("/assets/astronaut-particle-storm.png") center / cover no-repeat;
-  opacity: 0.82;
-  transform: scale(1.04);
+    radial-gradient(circle at 50% 4%, rgba(176, 255, 247, 0.24), transparent 28%),
+    radial-gradient(circle at 50% 76%, rgba(38, 195, 220, 0.14), transparent 30%),
+    linear-gradient(180deg, rgba(3, 56, 70, 0.08), rgba(1, 10, 16, 0.58)),
+    url("/assets/deepsea-abyss-card.png") center / cover no-repeat;
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+.mission-visual__image::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0, 5, 9, 0.56), transparent 38%, rgba(0, 5, 9, 0.42)),
+    radial-gradient(circle at 50% 58%, transparent 0 26%, rgba(0, 6, 10, 0.5) 78%);
+}
+
+.deep-sea-motion {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.deep-sea-astronaut-3d {
+  position: absolute;
+  inset: 27% 28% 17%;
+  z-index: 3;
+  pointer-events: auto;
+  filter:
+    drop-shadow(0 18px 28px rgba(0, 0, 0, 0.5))
+    drop-shadow(0 0 18px rgba(101, 239, 255, 0.2));
+}
+
+.deep-sea-astronaut-3d canvas {
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+  touch-action: none;
+}
+
+.deep-sea-astronaut-3d canvas:active {
+  cursor: grabbing;
 }
 
 .mission-visual__model {
@@ -883,7 +939,7 @@ button {
 .mission-visual__scan {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  z-index: 4;
   background:
     linear-gradient(90deg, transparent, rgba(151, 244, 255, 0.16), transparent),
     repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 72px);
@@ -894,7 +950,7 @@ button {
 
 .mission-visual__hud {
   position: absolute;
-  z-index: 4;
+  z-index: 5;
   inset: auto 24px 24px;
   display: flex;
   justify-content: space-between;
@@ -1120,7 +1176,7 @@ button {
 .terminal-layout,
 .api-dock-layout {
   display: grid;
-  grid-template-columns: minmax(230px, 0.38fr) minmax(760px, 1.62fr);
+  grid-template-columns: minmax(220px, 0.28fr) minmax(920px, 1.72fr);
   gap: 24px;
   align-items: stretch;
 }
@@ -1192,8 +1248,8 @@ button {
 }
 
 .relay-console {
-  height: min(690px, 78vh);
-  min-height: 600px;
+  height: min(860px, 88vh);
+  min-height: 760px;
   display: grid;
   grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
   overflow: hidden;
@@ -1351,9 +1407,9 @@ button {
 
 .relay-console__settings {
   display: grid;
-  grid-template-columns: 1fr 0.72fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
-  padding: 18px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--line-soft);
 }
 
@@ -1382,24 +1438,39 @@ button {
   padding: 0 14px;
 }
 
+.relay-status {
+  margin: 14px 24px 0;
+  color: var(--text);
+  border: 1px solid rgba(255, 196, 108, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 196, 108, 0.08);
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+
 .relay-console__messages {
   min-height: 0;
   overflow-y: auto;
   display: grid;
   align-content: start;
-  gap: 16px;
-  padding: 26px;
+  gap: 20px;
+  padding: 30px;
   scrollbar-color: rgba(133, 239, 255, 0.35) rgba(255, 255, 255, 0.04);
 }
 
 .relay-message {
-  max-width: min(78%, 720px);
+  max-width: min(86%, 980px);
   display: grid;
   gap: 8px;
 }
 
 .relay-message.user {
   justify-self: end;
+}
+
+.relay-message__body {
+  display: grid;
+  gap: 12px;
 }
 
 .relay-message p {
@@ -1415,6 +1486,37 @@ button {
 
 .relay-message.user p {
   background: rgba(133, 239, 255, 0.11);
+}
+
+.relay-media {
+  max-width: min(100%, 860px);
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(2, 9, 14, 0.68);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
+.relay-media--image {
+  display: block;
+  width: min(100%, 720px);
+  height: auto;
+}
+
+.relay-media--video {
+  display: block;
+  width: min(100%, 860px);
+  aspect-ratio: 16 / 9;
+}
+
+.relay-media-link {
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--cyan);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: rgba(133, 239, 255, 0.08);
+  padding: 10px 12px;
 }
 
 .relay-console__composer {
@@ -1654,6 +1756,10 @@ button {
 
   .mission-visual {
     min-height: 520px;
+  }
+
+  .deep-sea-astronaut-3d {
+    inset: 28% 18% 18%;
   }
 
   .mission-visual__gate {

@@ -1,6 +1,7 @@
 import http from "node:http";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -12,9 +13,7 @@ const PUBLIC = existsSync(DIST) ? DIST : join(ROOT, "public");
 loadDotEnv(join(ROOT, ".env"));
 
 const PORT = Number(process.env.PORT || 5181);
-const CHAT_API_BASE = normalizeApiBase(
-  process.env.CHAT_API_BASE || process.env.RELAY_API_BASE || "https://ai.lalakunaozi.fun"
-);
+const CHAT_API_BASE = normalizeApiBase(process.env.CHAT_API_BASE || process.env.RELAY_API_BASE || "https://ai.lalakunaozi.fun");
 const CHAT_API_KEY = process.env.CHAT_API_KEY || process.env.RELAY_API_KEY || process.env.DEEPSEEK_API_KEY || "";
 const CHAT_MODEL = process.env.CHAT_MODEL || process.env.RELAY_MODEL || "gpt-5.5";
 const IMAGE_API_BASE = normalizeApiBase(process.env.IMAGE_API_BASE || "");
@@ -27,12 +26,7 @@ const DATABASE_URL = process.env.DATABASE_URL || "";
 const DEFAULT_TITLE = "New chat";
 
 const { Pool } = pg;
-const pool = DATABASE_URL
-  ? new Pool({
-      connectionString: DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
-    })
-  : null;
+const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
 let dbReadyPromise = null;
 
 const mimeTypes = {
@@ -45,6 +39,9 @@ const mimeTypes = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
   ".ico": "image/x-icon"
 };
 
@@ -113,24 +110,19 @@ function buildApiEndpoint(base, path) {
 }
 
 function getStarterMessage() {
-  return {
-    role: "assistant",
-    content: "Relay online. Messages and generation tasks are saved to Supabase."
-  };
+  return { role: "assistant", content: "Relay online. Messages and generation tasks are saved to Supabase." };
 }
 
 function extractTokensFromSse(text, state) {
   state.buffer += text;
   const lines = state.buffer.split("\n");
   state.buffer = lines.pop() || "";
-
   let tokens = "";
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
     const data = trimmed.slice(5).trim();
     if (!data || data === "[DONE]") continue;
-
     try {
       const json = JSON.parse(data);
       tokens += json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content || "";
@@ -138,7 +130,6 @@ function extractTokensFromSse(text, state) {
       // Ignore partial or non-OpenAI-style stream lines.
     }
   }
-
   return tokens;
 }
 
@@ -158,25 +149,71 @@ function getLatestUserContent(messages) {
 
 function detectGenerationIntent(content) {
   const text = String(content || "").toLowerCase();
-  if (/生成视频|生视频|做视频|视频|video|animate|animation/.test(text)) return "video";
-  if (/生成图片|生图|画图|画一张|图片|图像|海报|image|picture|draw|poster/.test(text)) return "image";
+  if (/\u751f\u6210\u89c6\u9891|\u751f\u89c6\u9891|\u505a\u89c6\u9891|\u89c6\u9891|video|animate|animation/.test(text)) return "video";
+  if (/\u751f\u6210\u56fe\u7247|\u751f\u56fe|\u753b\u56fe|\u753b\u4e00\u5f20|\u56fe\u7247|\u56fe\u50cf|\u6d77\u62a5|image|picture|draw|poster/.test(text)) return "image";
   return "chat";
+}
+
+function cleanGeneratedUrl(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+  return trimmed.replace(/^[<(["']+/, "").replace(/[)\].,;:!?'"，。；：！？、】》）]+$/g, "");
+}
+
+function findUrlInText(value) {
+  const match = String(value || "").match(/https?:\/\/[^\s<>"']+/i);
+  return match ? cleanGeneratedUrl(match[0]) : "";
 }
 
 function extractResultUrl(data) {
   if (!data || typeof data !== "object") return "";
-  if (typeof data.url === "string") return data.url;
-  if (typeof data.result_url === "string") return data.result_url;
-  if (typeof data.video_url === "string") return data.video_url;
-  if (typeof data.output === "string" && /^https?:\/\//.test(data.output)) return data.output;
+  if (typeof data.url === "string") return cleanGeneratedUrl(data.url);
+  if (typeof data.result_url === "string") return cleanGeneratedUrl(data.result_url);
+  if (typeof data.video_url === "string") return cleanGeneratedUrl(data.video_url);
+  const contentUrl = findUrlInText(data.choices?.[0]?.message?.content);
+  if (contentUrl) return contentUrl;
+  if (typeof data.output === "string") return findUrlInText(data.output) || cleanGeneratedUrl(data.output);
   if (Array.isArray(data.output)) {
     const url = data.output.find((item) => typeof item === "string" && /^https?:\/\//.test(item));
-    if (url) return url;
+    if (url) return cleanGeneratedUrl(url);
   }
   const first = Array.isArray(data.data) ? data.data[0] : null;
-  if (first?.url) return first.url;
+  if (first?.url) return cleanGeneratedUrl(first.url);
   if (first?.b64_json) return `data:image/png;base64,${first.b64_json}`;
   return "";
+}
+
+function extensionFromContentType(contentType, type) {
+  if (contentType.includes("video/mp4")) return ".mp4";
+  if (contentType.includes("video/webm")) return ".webm";
+  if (contentType.includes("video/quicktime")) return ".mov";
+  if (contentType.includes("image/png")) return ".png";
+  if (contentType.includes("image/webp")) return ".webp";
+  if (contentType.includes("image/jpeg") || contentType.includes("image/jpg")) return ".jpg";
+  return type === "video" ? ".mp4" : ".png";
+}
+
+function extensionFromUrl(url, type) {
+  try {
+    const suffix = extname(new URL(url).pathname).toLowerCase();
+    if ([".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp"].includes(suffix)) return suffix;
+  } catch {
+    // Fall back to media type.
+  }
+  return type === "video" ? ".mp4" : ".png";
+}
+
+async function downloadGeneratedAsset(url, type) {
+  if (!url || url.startsWith("data:")) return url;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Generated asset download failed: HTTP ${response.status}`);
+  const contentType = response.headers.get("content-type") || "";
+  const ext = contentType ? extensionFromContentType(contentType, type) : extensionFromUrl(url, type);
+  const directory = join(PUBLIC, "generated");
+  await mkdir(directory, { recursive: true });
+  const filename = `${type}-${Date.now()}-${randomUUID()}${ext}`;
+  await writeFile(join(directory, filename), Buffer.from(await response.arrayBuffer()));
+  return `/generated/${filename}`;
 }
 
 async function ensureDb() {
@@ -217,7 +254,6 @@ async function ensureDb() {
       `);
     })();
   }
-
   await dbReadyPromise;
 }
 
@@ -225,19 +261,10 @@ async function getConversation(id) {
   await ensureDb();
   const result = await pool.query(
     `
-      select
-        c.id,
-        c.title,
-        c.created_at,
-        c.updated_at,
+      select c.id, c.title, c.created_at, c.updated_at,
         coalesce(
           json_agg(
-            json_build_object(
-              'id', m.id,
-              'role', m.role,
-              'content', m.content,
-              'createdAt', extract(epoch from m.created_at) * 1000
-            )
+            json_build_object('id', m.id, 'role', m.role, 'content', m.content, 'createdAt', extract(epoch from m.created_at) * 1000)
             order by m.created_at asc
           ) filter (where m.id is not null),
           '[]'::json
@@ -255,19 +282,10 @@ async function getConversation(id) {
 async function listConversations() {
   await ensureDb();
   const result = await pool.query(`
-    select
-      c.id,
-      c.title,
-      c.created_at,
-      c.updated_at,
+    select c.id, c.title, c.created_at, c.updated_at,
       coalesce(
         json_agg(
-          json_build_object(
-            'id', m.id,
-            'role', m.role,
-            'content', m.content,
-            'createdAt', extract(epoch from m.created_at) * 1000
-          )
+          json_build_object('id', m.id, 'role', m.role, 'content', m.content, 'createdAt', extract(epoch from m.created_at) * 1000)
           order by m.created_at asc
         ) filter (where m.id is not null),
         '[]'::json
@@ -326,10 +344,7 @@ async function updateGenerationTask(id, { status, resultUrl, metadata }) {
   await pool.query(
     `
       update generation_tasks
-      set status = $2,
-          result_url = $3,
-          metadata = $4,
-          updated_at = now()
+      set status = $2, result_url = $3, metadata = $4, updated_at = now()
       where id = $1
     `,
     [id, status, resultUrl || null, metadata || {}]
@@ -340,18 +355,14 @@ async function handleConversations(req, res) {
   try {
     if (req.method === "GET") {
       const conversations = await listConversations();
-      sendJson(res, 200, {
-        conversations: conversations.length ? conversations : [await createConversation()]
-      });
+      sendJson(res, 200, { conversations: conversations.length ? conversations : [await createConversation()] });
       return;
     }
-
     if (req.method === "POST") {
       const payload = JSON.parse((await readBody(req)) || "{}");
       sendJson(res, 201, { conversation: await createConversation(payload.title || DEFAULT_TITLE) });
       return;
     }
-
     sendJson(res, 405, { error: "Method not allowed" });
   } catch (error) {
     sendJson(res, 500, { error: `Database operation failed: ${error.message}` });
@@ -366,14 +377,12 @@ async function handleConversationById(req, res, id, action) {
       sendJson(res, 200, { ok: true });
       return;
     }
-
     if (req.method === "POST" && action === "reset") {
       await pool.query("delete from messages where conversation_id = $1", [id]);
       await touchConversation(id, DEFAULT_TITLE);
       sendJson(res, 200, { conversation: await getConversation(id) });
       return;
     }
-
     sendJson(res, 405, { error: "Method not allowed" });
   } catch (error) {
     sendJson(res, 500, { error: `Database operation failed: ${error.message}` });
@@ -385,52 +394,34 @@ async function callGenerationApi(type, prompt) {
   const base = isImage ? IMAGE_API_BASE : VIDEO_API_BASE;
   const apiKey = isImage ? IMAGE_API_KEY : VIDEO_API_KEY;
   const model = isImage ? IMAGE_MODEL : VIDEO_MODEL;
-
   if (!base || !apiKey) throw new Error(`${type.toUpperCase()} API is not configured`);
 
+  const videoBody = {
+    model,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.7,
+    top_p: 1,
+    frequency_penalty: 0,
+    presence_penalty: 0,
+    stream: false,
+    seconds: 5,
+    size: "1280x720"
+  };
+
   const attempts = isImage
-    ? [
-        {
-          label: "images",
-          endpoint: buildApiEndpoint(base, "/images/generations"),
-          body: { model, prompt, n: 1, size: "1024x1024" }
-        }
-      ]
+    ? [{ label: "images", endpoint: buildApiEndpoint(base, "/images/generations"), body: { model, prompt, n: 1, size: "1024x1024" } }]
     : [
-        {
-          label: "v2-video",
-          endpoint: normalizeApiBase(base).replace(/\/+$/, "") + "/v2/video/generations",
-          body: { model, prompt }
-        },
-        {
-          label: "v1-video",
-          endpoint: buildApiEndpoint(base, "/video/generations"),
-          body: { model, prompt }
-        },
-        {
-          label: "v1-videos",
-          endpoint: buildApiEndpoint(base, "/videos/generations"),
-          body: { model, prompt }
-        },
-        {
-          label: "chat-fallback",
-          endpoint: buildChatEndpoint(base),
-          body: {
-            model,
-            messages: [{ role: "user", content: prompt }],
-            stream: false
-          }
-        }
+        { label: "chat-video", endpoint: buildChatEndpoint(base), body: videoBody },
+        { label: "v2-video", endpoint: normalizeApiBase(base).replace(/\/+$/, "") + "/v2/video/generations", body: { ...videoBody, prompt } },
+        { label: "v1-video", endpoint: buildApiEndpoint(base, "/video/generations"), body: { ...videoBody, prompt } },
+        { label: "v1-videos", endpoint: buildApiEndpoint(base, "/videos/generations"), body: { ...videoBody, prompt } }
       ];
 
   const errors = [];
   for (const attempt of attempts) {
     const response = await fetch(attempt.endpoint, {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(attempt.body)
     });
 
@@ -443,15 +434,20 @@ async function callGenerationApi(type, prompt) {
     }
 
     if (response.ok) {
-      return {
-        data: { ...data, endpoint: attempt.label },
-        resultUrl: extractResultUrl(data)
-      };
+      const sourceUrl = extractResultUrl(data);
+      let resultUrl = sourceUrl;
+      if (sourceUrl) {
+        try {
+          resultUrl = await downloadGeneratedAsset(sourceUrl, type);
+        } catch (error) {
+          data.downloadError = error.message;
+        }
+      }
+      return { data: { ...data, endpoint: attempt.label, sourceUrl }, resultUrl };
     }
 
     errors.push(`${attempt.label}: ${data.error?.message || data.message || text || `HTTP ${response.status}`}`);
   }
-
   throw new Error(errors.join(" | "));
 }
 
@@ -463,7 +459,6 @@ async function proxyChat(req, res) {
     sendJson(res, 400, { error: "Request body is not valid JSON" });
     return;
   }
-
   if (!CHAT_API_KEY) {
     sendJson(res, 500, { error: "CHAT_API_KEY is not configured" });
     return;
@@ -477,12 +472,9 @@ async function proxyChat(req, res) {
   try {
     let userMessageId = null;
     if (pool) {
-      if (!conversationId || conversationId.startsWith("local-")) {
-        conversationId = (await createConversation()).id;
-      }
+      if (!conversationId || conversationId.startsWith("local-")) conversationId = (await createConversation()).id;
       const currentConversation = await getConversation(conversationId);
-      const nextTitle =
-        currentConversation?.title === DEFAULT_TITLE && userContent ? userContent.slice(0, 18) : null;
+      const nextTitle = currentConversation?.title === DEFAULT_TITLE && userContent ? userContent.slice(0, 18) : null;
       if (userContent) userMessageId = await addMessage(conversationId, "user", userContent);
       await touchConversation(conversationId, nextTitle);
     }
@@ -497,21 +489,13 @@ async function proxyChat(req, res) {
     if (intent === "image" || intent === "video") {
       let assistantText = "";
       let taskId = null;
-      if (pool) {
-        taskId = await createGenerationTask({
-          conversationId,
-          messageId: userMessageId,
-          type: intent,
-          prompt: userContent
-        });
-      }
+      if (pool) taskId = await createGenerationTask({ conversationId, messageId: userMessageId, type: intent, prompt: userContent });
 
       try {
         writeSse(res, `Starting ${intent} generation...\n`);
         const result = await callGenerationApi(intent, userContent);
-        const resultLine = result.resultUrl
-          ? `${intent === "image" ? "Image" : "Video"} generated:\n${result.resultUrl}`
-          : `${intent === "image" ? "Image" : "Video"} task submitted. Check the provider dashboard for progress.`;
+        const label = intent === "image" ? "Image" : "Video";
+        const resultLine = result.resultUrl ? `${label} generated:\n${result.resultUrl}` : `${label} task submitted. No URL was returned yet.`;
         assistantText = resultLine;
         if (pool) await updateGenerationTask(taskId, { status: "completed", resultUrl: result.resultUrl, metadata: result.data });
         writeSse(res, resultLine);
@@ -531,16 +515,8 @@ async function proxyChat(req, res) {
 
     const upstream = await fetch(buildChatEndpoint(payload.apiBase || CHAT_API_BASE), {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${CHAT_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: payload.model || CHAT_MODEL,
-        messages,
-        temperature: Number(payload.temperature ?? 0.7),
-        stream: true
-      })
+      headers: { "Authorization": `Bearer ${CHAT_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: payload.model || CHAT_MODEL, messages, temperature: Number(payload.temperature ?? 0.7), stream: true })
     });
 
     if (!upstream.body) {
@@ -574,12 +550,10 @@ async function serveStatic(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const requested = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const fullPath = normalize(join(PUBLIC, requested));
-
   if (!fullPath.startsWith(PUBLIC)) {
     sendJson(res, 403, { error: "Forbidden" });
     return;
   }
-
   try {
     const data = await readFile(fullPath);
     res.writeHead(200, { "Content-Type": mimeTypes[extname(fullPath)] || "application/octet-stream" });
@@ -607,23 +581,19 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
-
   if (req.url === "/api/conversations") {
     await handleConversations(req, res);
     return;
   }
-
   const conversationMatch = req.url.match(/^\/api\/conversations\/([^/]+)(?:\/(reset))?$/);
   if (conversationMatch) {
     await handleConversationById(req, res, conversationMatch[1], conversationMatch[2]);
     return;
   }
-
   if (req.method === "POST" && req.url === "/api/chat") {
     await proxyChat(req, res);
     return;
   }
-
   await serveStatic(req, res);
 });
 

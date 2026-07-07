@@ -36,6 +36,48 @@ function formatTime(time) {
   }).format(Number(time || Date.now()));
 }
 
+function cleanUrl(value) {
+  return String(value || "").trim().replace(/[)\].,;:!?'"，。；：！？、】》）]+$/g, "");
+}
+
+function getMediaUrls(content) {
+  const matches = String(content || "").match(/(?:https?:\/\/[^\s<>"']+|\/generated\/[^\s<>"']+)/g) || [];
+  return [...new Set(matches.map(cleanUrl))];
+}
+
+function isVideoUrl(url) {
+  return /\.(mp4|webm|mov)(?:$|\?)/i.test(url);
+}
+
+function isImageUrl(url) {
+  return /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(?:$|\?)/i.test(url);
+}
+
+function MessageContent({ content, loading }) {
+  const safeContent = content || (loading ? "Receiving signal..." : "");
+  const urls = getMediaUrls(safeContent);
+  const textOnly = urls.reduce((text, url) => text.replace(url, "").trim(), safeContent);
+
+  return (
+    <div className="relay-message__body">
+      {textOnly ? <p>{textOnly}</p> : null}
+      {urls.map((url) => {
+        if (isVideoUrl(url)) {
+          return <video className="relay-media relay-media--video" key={url} controls playsInline src={url} />;
+        }
+        if (isImageUrl(url)) {
+          return <img className="relay-media relay-media--image" key={url} src={url} alt="Generated result" />;
+        }
+        return (
+          <a className="relay-media-link" key={url} href={url} target="_blank" rel="noreferrer">
+            {url}
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ChatPanel({ config }) {
   const [conversations, setConversations] = useState([createLocalConversation()]);
   const [activeId, setActiveId] = useState("");
@@ -287,7 +329,7 @@ export default function ChatPanel({ config }) {
           {messages.map((message, index) => (
             <article className={`relay-message ${message.role}`} key={`${message.role}-${index}`}>
               <span>{message.role === "user" ? "YOU" : "AI"}</span>
-              <p>{message.content || (loading ? "Receiving signal..." : "")}</p>
+              <MessageContent content={message.content} loading={loading} />
             </article>
           ))}
         </section>
