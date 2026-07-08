@@ -2,13 +2,9 @@ import { useEffect, useState } from "react";
 import "./App.css";
 
 import LoadingScreen from "./components/LoadingScreen";
-import SmoothScroll from "./components/SmoothScroll";
 import ScrollProgress from "./components/ScrollProgress";
-import SpaceParticles from "./components/SpaceParticles";
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
-import Mission from "./components/Mission";
-import Galaxy from "./components/Galaxy";
 import Contact from "./components/Contact";
 import Footer from "./components/Footer";
 import ConsolePage from "./components/ConsolePage";
@@ -40,7 +36,7 @@ export default function App() {
   useEffect(() => {
     if (isConsoleRoute) return;
     function handleScroll() {
-      const sections = ["home", "mission", "galaxy", "contact"];
+      const sections = ["home", "contact"];
       const currentSection = sections.find((sectionId) => {
         const section = document.getElementById(sectionId);
         if (!section) return false;
@@ -62,13 +58,9 @@ export default function App() {
   return (
     <div className="page space-site">
       {isLoading && <LoadingScreen isLeaving={isLeavingLoading} />}
-      <SmoothScroll />
       <ScrollProgress />
-      <SpaceParticles />
       <Navbar activeSection={activeSection} />
       <Hero />
-      <Mission />
-      <Galaxy />
       <Contact config={config} />
       <Footer />
     </div>

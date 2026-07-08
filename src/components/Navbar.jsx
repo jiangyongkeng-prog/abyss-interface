@@ -7,12 +7,6 @@ function Navbar({ activeSection }) {
                 <a className={activeSection === 'home' ? 'active' : ''} href="#home">
                     Home
                 </a>
-                <a className={activeSection === 'mission' ? 'active' : ''} href="#mission">
-                    Mission
-                </a>
-                <a className={activeSection === 'galaxy' ? 'active' : ''} href="#galaxy">
-                    Galaxy
-                </a>
                 <a className={activeSection === 'contact' ? 'active' : ''} href="#contact">
                     API
                 </a>

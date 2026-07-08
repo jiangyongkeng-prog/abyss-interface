@@ -1837,8 +1837,8 @@ button {
 }
 
 .command-deck .relay-console__head {
-  width: min(900px, calc(100% - 56px));
-  margin: 0 auto;
+  width: min(900px, calc(100% - 48px));
+  margin: 0 auto 0 24px;
   padding: 24px 0 12px;
   border-bottom: 0;
 }
@@ -1848,10 +1848,10 @@ button {
 }
 
 .command-deck .relay-console__messages {
-  width: min(900px, calc(100% - 56px));
-  justify-self: center;
+  width: min(900px, calc(100% - 48px));
+  justify-self: start;
   gap: 24px;
-  padding: 28px 0 132px;
+  padding: 28px 0 132px 24px;
 }
 
 .command-deck .relay-message {
@@ -1976,10 +1976,10 @@ button {
 
 .command-deck .relay-console__composer {
   position: absolute;
-  left: 50%;
+  left: 24px;
   bottom: 24px;
-  width: min(840px, calc(100% - 56px));
-  transform: translateX(-50%);
+  width: min(840px, calc(100% - 48px));
+  transform: none;
   border: 1px solid rgba(49, 78, 55, 0.12);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.94);
@@ -2116,8 +2116,8 @@ button {
   }
 
   .command-deck .relay-console__composer {
-    left: calc(286px + (100vw - 286px) / 2);
-    width: min(760px, calc(100vw - 330px));
+    left: 24px;
+    width: min(760px, calc(100% - 48px));
   }
 }
 
@@ -2311,8 +2311,18 @@ button {
   }
 
   .command-deck .relay-console__composer {
-    left: 50%;
+    left: 14px;
     bottom: 16px;
     width: calc(100% - 28px);
+  }
+
+  .command-deck .relay-console__head {
+    width: calc(100% - 28px);
+    margin-left: 14px;
+  }
+
+  .command-deck .relay-console__messages {
+    width: calc(100% - 28px);
+    padding-left: 14px;
   }
 }
