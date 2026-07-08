@@ -1,7 +1,7 @@
 import http from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -23,6 +23,9 @@ const VIDEO_API_BASE = normalizeApiBase(process.env.VIDEO_API_BASE || "");
 const VIDEO_API_KEY = process.env.VIDEO_API_KEY || "";
 const VIDEO_MODEL = process.env.VIDEO_MODEL || "grok-imagine-video";
 const DATABASE_URL = process.env.DATABASE_URL || "";
+const CONSOLE_PASSWORD = process.env.CONSOLE_PASSWORD || "abyss";
+const CONSOLE_SESSION_SECRET = process.env.CONSOLE_SESSION_SECRET || DATABASE_URL || CONSOLE_PASSWORD;
+const CONSOLE_COOKIE_NAME = "console_session_v2";
 const DEFAULT_TITLE = "New chat";
 
 const { Pool } = pg;
@@ -63,6 +66,62 @@ function loadDotEnv(file) {
 function sendJson(res, status, payload) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
+}
+
+function createConsoleToken() {
+  return createHash("sha256").update(`${CONSOLE_PASSWORD}:${CONSOLE_SESSION_SECRET}`).digest("hex");
+}
+
+function parseCookies(req) {
+  return Object.fromEntries(
+    String(req.headers.cookie || "")
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const index = part.indexOf("=");
+        return index === -1 ? [part, ""] : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
+      })
+  );
+}
+
+function isConsoleAuthed(req) {
+  return parseCookies(req)[CONSOLE_COOKIE_NAME] === createConsoleToken();
+}
+
+function requireConsoleAuth(req, res) {
+  if (isConsoleAuthed(req)) return true;
+  sendJson(res, 401, { error: "Console access required" });
+  return false;
+}
+
+async function handleConsoleLogin(req, res) {
+  try {
+    const payload = JSON.parse((await readBody(req)) || "{}");
+    if (payload.password !== CONSOLE_PASSWORD) {
+      sendJson(res, 401, { error: "Invalid access code" });
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "Set-Cookie": `${CONSOLE_COOKIE_NAME}=${createConsoleToken()}; Path=/; HttpOnly; SameSite=Lax`
+    });
+    res.end(JSON.stringify({ ok: true }));
+  } catch {
+    sendJson(res, 400, { error: "Request body is not valid JSON" });
+  }
+}
+
+function handleConsoleLogout(res) {
+  res.writeHead(200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Set-Cookie": [
+      `${CONSOLE_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+      "console_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+    ]
+  });
+  res.end(JSON.stringify({ ok: true }));
 }
 
 function writeSse(res, content) {
@@ -613,6 +672,21 @@ async function serveStatic(req, res) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (req.method === "GET" && req.url === "/api/console/session") {
+    sendJson(res, 200, { authenticated: isConsoleAuthed(req) });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/console/login") {
+    await handleConsoleLogin(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/console/logout") {
+    handleConsoleLogout(res);
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/api/config") {
     sendJson(res, 200, {
       apiBase: CHAT_API_BASE,
@@ -625,15 +699,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (req.url === "/api/conversations") {
+    if (!requireConsoleAuth(req, res)) return;
     await handleConversations(req, res);
     return;
   }
   const conversationMatch = req.url.match(/^\/api\/conversations\/([^/]+)(?:\/(reset))?$/);
   if (conversationMatch) {
+    if (!requireConsoleAuth(req, res)) return;
     await handleConversationById(req, res, conversationMatch[1], conversationMatch[2]);
     return;
   }
   if (req.method === "POST" && req.url === "/api/chat") {
+    if (!requireConsoleAuth(req, res)) return;
     await proxyChat(req, res);
     return;
   }

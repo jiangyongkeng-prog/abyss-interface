@@ -7,8 +7,15 @@ function easeOutCubic(value) {
   return 1 - Math.pow(1 - value, 3);
 }
 
-export default function LogoParticleIntro() {
+export default function LogoParticleIntro({ isLeaving }) {
   const canvasRef = useRef(null);
+  const exitStartRef = useRef(null);
+
+  useEffect(() => {
+    if (isLeaving && !exitStartRef.current) {
+      exitStartRef.current = performance.now();
+    }
+  }, [isLeaving]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,12 +65,19 @@ export default function LogoParticleIntro() {
         const angle = Math.random() * Math.PI * 2;
         const radius = Math.max(width, height) * (0.34 + Math.random() * 0.54);
 
+        const dx = target.x - width / 2;
+        const dy = target.y - height / 2;
+        const distance = Math.max(1, Math.hypot(dx, dy));
+        const exitDistance = Math.max(width, height) * (0.34 + Math.random() * 0.34);
+
         return {
           sx: width / 2 + Math.cos(angle) * radius,
           sy: height / 2 + Math.sin(angle) * radius,
           tx: target.x + (Math.random() - 0.5) * 2,
           ty: target.y + (Math.random() - 0.5) * 2,
-        size: 0.8 + Math.random() * 1.4,
+          ex: target.x + (dx / distance) * exitDistance + (Math.random() - 0.5) * 160,
+          ey: target.y + (dy / distance) * exitDistance + (Math.random() - 0.5) * 160,
+          size: 0.8 + Math.random() * 1.4,
           delay: Math.random() * 420,
           phase: Math.random() * Math.PI * 2
         };
@@ -84,9 +98,17 @@ export default function LogoParticleIntro() {
         const raw = Math.min(1, Math.max(0, (now - startTime - particle.delay) / 1650));
         const progress = easeOutCubic(raw);
         const orbit = Math.sin(now * 0.0012 + particle.phase) * (1 - progress) * 32;
-        const x = particle.sx + (particle.tx - particle.sx) * progress + orbit;
-        const y = particle.sy + (particle.ty - particle.sy) * progress;
-        const alpha = 0.14 + progress * 0.82;
+        let x = particle.sx + (particle.tx - particle.sx) * progress + orbit;
+        let y = particle.sy + (particle.ty - particle.sy) * progress;
+        let alpha = 0.14 + progress * 0.82;
+
+        if (exitStartRef.current) {
+          const exitRaw = Math.min(1, Math.max(0, (now - exitStartRef.current) / 860));
+          const exitProgress = easeOutCubic(exitRaw);
+          x += (particle.ex - x) * exitProgress;
+          y += (particle.ey - y) * exitProgress;
+          alpha *= 1 - exitProgress * 0.92;
+        }
 
         context.fillStyle = `rgba(150, 244, 255, ${alpha})`;
         context.beginPath();
@@ -95,7 +117,10 @@ export default function LogoParticleIntro() {
       });
 
       context.globalCompositeOperation = "lighter";
-      context.fillStyle = "rgba(133, 239, 255, 0.07)";
+      const glowAlpha = exitStartRef.current
+        ? Math.max(0, 0.07 * (1 - (now - exitStartRef.current) / 860))
+        : 0.07;
+      context.fillStyle = `rgba(133, 239, 255, ${glowAlpha})`;
       context.beginPath();
       context.arc(width / 2, height / 2, Math.min(width, height) * 0.24, 0, Math.PI * 2);
       context.fill();

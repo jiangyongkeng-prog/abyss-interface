@@ -1,12 +1,13 @@
 import { motion, useInView } from "motion/react";
 import { useRef } from "react";
-import MissionPortal3D from "./MissionPortal3D";
+import DeepSeaAstronaut3D from "./DeepSeaAstronaut3D";
+import DeepSeaMotion from "./DeepSeaMotion";
 
-const markers = ["ORBIT 04", "SIGNAL 128", "GATEWAY LIVE"];
+const markers = ["DEPTH 04", "CURRENT 128", "ABYSS LIVE"];
 
 export default function MissionVisual() {
   const visualRef = useRef(null);
-  const shouldLoadModel = useInView(visualRef, { once: true, margin: "280px" });
+  const shouldLoadAstronaut = useInView(visualRef, { once: true, margin: "260px" });
 
   return (
     <motion.div
@@ -18,7 +19,8 @@ export default function MissionVisual() {
       transition={{ duration: 0.9, ease: "easeOut" }}
     >
       <div className="mission-visual__image" />
-      {shouldLoadModel && <MissionPortal3D />}
+      <DeepSeaMotion />
+      {shouldLoadAstronaut && <DeepSeaAstronaut3D />}
       <div className="mission-visual__scan" />
       <div className="mission-visual__hud">
         {markers.map((item) => (

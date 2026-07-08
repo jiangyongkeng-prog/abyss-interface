@@ -1,5 +1,4 @@
 import { motion } from "motion/react";
-import ChatPanel from "./ChatPanel";
 
 export default function Contact({ config }) {
   return (
@@ -15,12 +14,12 @@ export default function Contact({ config }) {
       >
         <p className="eyebrow">RELAY STATION</p>
         <h2>
-          Relay console
+          Abyss console
           <br />
-          below the fold.
+          behind the gate.
         </h2>
         <p className="terminal-lede">
-          API 功能保留在最后一屏，视觉体验先完成，再进入可用的聊天控制台。
+          The public site stays cinematic. The private console opens as a dedicated command deck.
         </p>
       </motion.div>
 
@@ -32,19 +31,21 @@ export default function Contact({ config }) {
         transition={{ duration: 0.9, ease: "easeOut" }}
       >
         <div className="terminal-cta api-dock-copy">
-          <span className="api-dock-tag">BACKEND PROXY READY</span>
+          <span className="api-dock-tag">PRIVATE GENERATION DECK</span>
           <p>
-            密钥放在 Node 后端，浏览器只连接自己的中转接口。这样页面上线后更安全，
-            也方便以后切换模型。
+            Chat, image generation, and image-to-video tasks now live behind a password-protected Abyss access gate.
           </p>
 
           <div className="api-dock-metrics">
-            <div><strong>{config.model || "gpt-4-all"}</strong><span>Model</span></div>
+            <div><strong>{config.model || "gpt-5.5"}</strong><span>Model</span></div>
             <div><strong>{config.backendKeyConfigured ? "READY" : "NO KEY"}</strong><span>Status</span></div>
           </div>
         </div>
 
-        <ChatPanel config={config} />
+        <a className="api-dock-launch" href="/console">
+          <span>Open private console</span>
+          <strong>ABYSS ACCESS</strong>
+        </a>
       </motion.div>
     </section>
   );

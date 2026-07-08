@@ -16,6 +16,9 @@ function Navbar({ activeSection }) {
                 <a className={activeSection === 'contact' ? 'active' : ''} href="#contact">
                     API
                 </a>
+                <a href="/console">
+                    Console
+                </a>
             </div>
         </nav>
     )

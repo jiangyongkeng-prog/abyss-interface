@@ -288,7 +288,7 @@ export default function ChatPanel({ config }) {
         <header className="relay-console__head">
           <div>
             <span>AI RELAY</span>
-            <h3>Orbital Console</h3>
+            <h3>AI Console</h3>
           </div>
           <div className="relay-console__actions">
             <button type="button" onClick={handleNewConversation}>

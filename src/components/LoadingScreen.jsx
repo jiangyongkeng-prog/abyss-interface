@@ -4,22 +4,22 @@ import LogoParticleIntro from './LogoParticleIntro'
 function LoadingScreen({ isLeaving }) {
     return (
         <motion.div
-            className="loading-screen"
+            className={`loading-screen ${isLeaving ? 'is-leaving' : ''}`}
             initial={{ opacity: 1 }}
             animate={{
                 opacity: isLeaving ? 0 : 1,
                 pointerEvents: isLeaving ? 'none' : 'auto',
             }}
-            transition={{ duration: 0.75, ease: 'easeOut' }}
+            transition={{ duration: 0.65, delay: isLeaving ? 0.58 : 0, ease: 'easeOut' }}
         >
-            <LogoParticleIntro />
+            <LogoParticleIntro isLeaving={isLeaving} />
             <div className="loading-orb"></div>
 
             <motion.div
                 className="loading-content"
                 initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 0.9, ease: 'easeOut' }}
+                animate={{ opacity: isLeaving ? 0 : 1, y: isLeaving ? -18 : 0 }}
+                transition={{ duration: isLeaving ? 0.34 : 0.8, delay: isLeaving ? 0 : 0.9, ease: 'easeOut' }}
             >
                 <p>SPATIAL SYSTEM</p>
                 <h1>Interface Awakening</h1>

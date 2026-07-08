@@ -11,8 +11,10 @@ import Mission from "./components/Mission";
 import Galaxy from "./components/Galaxy";
 import Contact from "./components/Contact";
 import Footer from "./components/Footer";
+import ConsolePage from "./components/ConsolePage";
 
 export default function App() {
+  const isConsoleRoute = window.location.pathname === "/console";
   const [activeSection, setActiveSection] = useState("home");
   const [isLoading, setIsLoading] = useState(true);
   const [isLeavingLoading, setIsLeavingLoading] = useState(false);
@@ -23,8 +25,8 @@ export default function App() {
   });
 
   useEffect(() => {
-    const leaveTimer = setTimeout(() => setIsLeavingLoading(true), 1450);
-    const removeTimer = setTimeout(() => setIsLoading(false), 2100);
+    const leaveTimer = setTimeout(() => setIsLeavingLoading(true), 1550);
+    const removeTimer = setTimeout(() => setIsLoading(false), 2850);
     return () => {
       clearTimeout(leaveTimer);
       clearTimeout(removeTimer);
@@ -36,6 +38,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (isConsoleRoute) return;
     function handleScroll() {
       const sections = ["home", "mission", "galaxy", "contact"];
       const currentSection = sections.find((sectionId) => {
@@ -50,7 +53,11 @@ export default function App() {
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [isConsoleRoute]);
+
+  if (isConsoleRoute) {
+    return <ConsolePage config={config} />;
+  }
 
   return (
     <div className="page space-site">
