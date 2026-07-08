@@ -54,19 +54,28 @@ function isImageUrl(url) {
 }
 
 function MessageContent({ content, loading }) {
+  const [failedUrls, setFailedUrls] = useState([]);
   const safeContent = content || (loading ? "Receiving signal..." : "");
   const urls = getMediaUrls(safeContent);
   const textOnly = urls.reduce((text, url) => text.replace(url, "").trim(), safeContent);
+  const markFailed = (url) => setFailedUrls((current) => (current.includes(url) ? current : [...current, url]));
 
   return (
     <div className="relay-message__body">
       {textOnly ? <p>{textOnly}</p> : null}
       {urls.map((url) => {
+        if (failedUrls.includes(url)) {
+          return (
+            <a className="relay-media-link relay-media-link--missing" key={url} href={url} target="_blank" rel="noreferrer">
+              Generated file is no longer available. Open saved link
+            </a>
+          );
+        }
         if (isVideoUrl(url)) {
-          return <video className="relay-media relay-media--video" key={url} controls playsInline src={url} />;
+          return <video className="relay-media relay-media--video" key={url} controls playsInline src={url} onError={() => markFailed(url)} />;
         }
         if (isImageUrl(url)) {
-          return <img className="relay-media relay-media--image" key={url} src={url} alt="Generated result" />;
+          return <img className="relay-media relay-media--image" key={url} src={url} alt="Generated result" onError={() => markFailed(url)} />;
         }
         return (
           <a className="relay-media-link" key={url} href={url} target="_blank" rel="noreferrer">

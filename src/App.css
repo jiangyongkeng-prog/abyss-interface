@@ -1538,12 +1538,16 @@ button {
   display: block;
   width: min(100%, 720px);
   height: auto;
+  max-height: min(58vh, 560px);
+  object-fit: contain;
 }
 
 .relay-media--video {
   display: block;
   width: min(100%, 860px);
   aspect-ratio: 16 / 9;
+  max-height: min(52vh, 430px);
+  object-fit: contain;
 }
 
 .relay-media-link {
@@ -1555,6 +1559,12 @@ button {
   border-radius: 12px;
   background: rgba(133, 239, 255, 0.08);
   padding: 10px 12px;
+}
+
+.relay-media-link--missing {
+  color: #49624c;
+  border-color: rgba(49, 78, 55, 0.16);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .relay-console__composer {
@@ -1837,7 +1847,7 @@ button {
 }
 
 .command-deck .relay-console__head {
-  width: min(900px, calc(100% - 48px));
+  width: calc(100% - 48px);
   margin: 0 auto 0 24px;
   padding: 24px 0 12px;
   border-bottom: 0;
@@ -1848,14 +1858,14 @@ button {
 }
 
 .command-deck .relay-console__messages {
-  width: min(900px, calc(100% - 48px));
+  width: calc(100% - 48px);
   justify-self: start;
   gap: 24px;
-  padding: 28px 0 132px 24px;
+  padding: 28px 0 190px 24px;
 }
 
 .command-deck .relay-message {
-  max-width: min(82%, 780px);
+  max-width: min(72%, 780px);
 }
 
 .command-deck .relay-history {
@@ -1978,7 +1988,7 @@ button {
   position: absolute;
   left: 24px;
   bottom: 24px;
-  width: min(840px, calc(100% - 48px));
+  width: calc(100% - 48px);
   transform: none;
   border: 1px solid rgba(49, 78, 55, 0.12);
   border-radius: 24px;
