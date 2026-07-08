@@ -213,6 +213,72 @@ function detectGenerationIntent(content) {
   return "chat";
 }
 
+function extractJsonObject(value) {
+  const text = String(value || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+async function decideChatToolAction(messages, userContent) {
+  const recentMessages = messages
+    .filter((message) => ["user", "assistant"].includes(message.role))
+    .slice(-10)
+    .map((message) => ({ role: message.role, content: String(message.content || "").slice(0, 2000) }));
+
+  const plannerMessages = [
+    {
+      role: "system",
+      content: [
+        "You are the tool router for an AI chat app.",
+        "Decide whether the assistant should answer normally, generate an image, or generate a video.",
+        "Return JSON only with this shape: {\"action\":\"chat|image|video\",\"prompt\":\"\",\"reason\":\"\"}.",
+        "Choose chat when the user is brainstorming, asking for advice, planning a project, asking what to do, or has not clearly asked to generate now.",
+        "Choose image only when the user clearly asks to create/generate/draw an image now.",
+        "Choose video only when the user clearly asks to create/generate/animate a video now.",
+        "If the user asks for ideas before making a YouTube/TikTok/short video, choose chat.",
+        "If choosing image or video, rewrite prompt as a concise generation prompt in the user's language.",
+        "Do not choose a tool just because the words image, video, YouTube, short, picture, or generate appear."
+      ].join("\n")
+    },
+    ...recentMessages,
+    {
+      role: "user",
+      content: `Latest user request:\n${userContent}\n\nReturn JSON only.`
+    }
+  ];
+
+  try {
+    const response = await fetch(buildChatEndpoint(CHAT_API_BASE), {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${CHAT_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: CHAT_MODEL,
+        messages: plannerMessages,
+        temperature: 0,
+        stream: false
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const content = data.choices?.[0]?.message?.content || "";
+    const parsed = extractJsonObject(content);
+    const action = ["image", "video", "chat"].includes(parsed?.action) ? parsed.action : "chat";
+    return {
+      action,
+      prompt: String(parsed?.prompt || userContent || "").trim(),
+      reason: String(parsed?.reason || "").trim()
+    };
+  } catch {
+    return { action: "chat", prompt: userContent, reason: "router_failed" };
+  }
+}
+
 function cleanGeneratedUrl(value) {
   const trimmed = String(value || "").trim();
   if (!trimmed) return "";
@@ -567,7 +633,6 @@ async function proxyChat(req, res) {
 
   const messages = payload.messages || [];
   const userContent = getLatestUserContent(messages);
-  const intent = detectGenerationIntent(userContent);
   let conversationId = payload.conversationId || "";
 
   try {
@@ -587,23 +652,27 @@ async function proxyChat(req, res) {
       "X-Conversation-Id": conversationId
     });
 
+    const toolAction = await decideChatToolAction(messages, userContent);
+    const intent = toolAction.action;
+
     if (intent === "image" || intent === "video") {
       let assistantText = "";
       let taskId = null;
-      if (pool) taskId = await createGenerationTask({ conversationId, messageId: userMessageId, type: intent, prompt: userContent });
+      const generationPrompt = toolAction.prompt || userContent;
+      if (pool) taskId = await createGenerationTask({ conversationId, messageId: userMessageId, type: intent, prompt: generationPrompt });
 
       try {
         writeSse(res, `Starting ${intent} generation...\n`);
         const imageUrl = intent === "video" ? toPublicAssetUrl(getLatestImageUrl(messages), req) : "";
-        const result = await callGenerationApi(intent, userContent, { imageUrl });
+        const result = await callGenerationApi(intent, generationPrompt, { imageUrl });
         const label = intent === "image" ? "Image" : "Video";
         const resultLine = result.resultUrl ? `${label} generated:\n${result.resultUrl}` : `${label} task submitted. No URL was returned yet.`;
         assistantText = resultLine;
-        if (pool) await updateGenerationTask(taskId, { status: "completed", resultUrl: result.resultUrl, metadata: result.data });
+        if (pool) await updateGenerationTask(taskId, { status: "completed", resultUrl: result.resultUrl, metadata: { ...result.data, router: toolAction } });
         writeSse(res, resultLine);
       } catch (error) {
         assistantText = `${intent} generation failed: ${error.message}`;
-        if (pool) await updateGenerationTask(taskId, { status: "failed", metadata: { error: error.message } });
+        if (pool) await updateGenerationTask(taskId, { status: "failed", metadata: { error: error.message, router: toolAction } });
         writeSse(res, assistantText);
       }
 
