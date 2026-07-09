@@ -1666,6 +1666,61 @@ button {
   line-height: 1.55;
 }
 
+.relay-task-progress {
+  width: min(100%, 520px);
+  padding: 12px 14px;
+  border: 1px solid rgba(49, 78, 55, 0.14);
+  border-radius: 8px;
+  background: rgba(250, 253, 248, 0.76);
+  box-shadow: 0 8px 24px rgba(43, 68, 48, 0.08);
+}
+
+.relay-task-progress__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+.relay-task-progress__head span {
+  color: #294f36;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.relay-task-progress__head small {
+  color: rgba(31, 52, 37, 0.52);
+  font-size: 0.68rem;
+}
+
+.relay-task-progress__track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(47, 107, 67, 0.12);
+}
+
+.relay-task-progress__track span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #89b78f, #2f6b43, #b4d6ac);
+  animation: relayTaskProgress 1.35s ease-in-out infinite;
+}
+
+@keyframes relayTaskProgress {
+  0% {
+    transform: translateX(-115%);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
+}
+
 .relay-media {
   max-width: min(100%, 860px);
   border: 1px solid var(--line-soft);
@@ -1919,6 +1974,28 @@ button {
 .relay-console__composer button:disabled {
   opacity: 0.45;
   cursor: wait;
+}
+
+.relay-console__composer .relay-stop-button {
+  border-color: rgba(132, 57, 47, 0.24);
+  background: rgba(255, 248, 246, 0.94);
+  box-shadow: 0 8px 24px rgba(122, 57, 48, 0.14);
+}
+
+.relay-stop-button__icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+  margin: auto;
+  border-radius: 3px;
+  background: #9a493f;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-task-progress__track span {
+    width: 68%;
+    animation: none;
+  }
 }
 
 /* Abyss Console */

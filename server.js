@@ -295,7 +295,7 @@ function buildReferenceLockedPrompt(prompt) {
   ].join("\n");
 }
 
-async function decideChatToolAction(messages, userContent, context = {}) {
+async function decideChatToolAction(messages, userContent, context = {}, signal) {
   const recentMessages = messages
     .filter((message) => ["user", "assistant"].includes(message.role))
     .slice(-10)
@@ -366,7 +366,8 @@ async function decideChatToolAction(messages, userContent, context = {}) {
         messages: plannerMessages,
         temperature: 0,
         stream: false
-      })
+      }),
+      signal
     });
 
     const data = await response.json().catch(() => ({}));
@@ -379,7 +380,8 @@ async function decideChatToolAction(messages, userContent, context = {}) {
       reason: String(parsed?.reason || "").trim(),
       videoPlan: normalizeVideoPlan(parsed?.videoPlan)
     };
-  } catch {
+  } catch (error) {
+    if (signal?.aborted) throw error;
     return { action: "chat", prompt: userContent, reason: "router_failed", videoPlan: normalizeVideoPlan() };
   }
 }
@@ -570,9 +572,9 @@ async function saveGeneratedAssetBytes(bytes, filename, contentType) {
   return `/generated/${filename}`;
 }
 
-async function downloadGeneratedAsset(url, type) {
+async function downloadGeneratedAsset(url, type, signal) {
   if (!url || url.startsWith("data:")) return url;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`Generated asset download failed: HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";
   const ext = contentType ? extensionFromContentType(contentType, type) : extensionFromUrl(url, type);
@@ -1120,7 +1122,8 @@ async function callGenerationApi(type, prompt, options = {}) {
     const response = await fetch(attempt.endpoint, {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(attempt.body)
+      body: JSON.stringify(attempt.body),
+      signal: options.signal
     });
 
     const text = await response.text();
@@ -1147,8 +1150,9 @@ async function callGenerationApi(type, prompt, options = {}) {
       let resultUrl = sourceUrl;
       if (sourceUrl) {
         try {
-          resultUrl = await downloadGeneratedAsset(sourceUrl, type);
+          resultUrl = await downloadGeneratedAsset(sourceUrl, type, options.signal);
         } catch (error) {
+          if (options.signal?.aborted) throw error;
           data.downloadError = error.message;
         }
       }
@@ -1201,6 +1205,12 @@ async function callVideoWithContinuityCheck(prompt, options = {}, onProgress = (
 }
 
 async function proxyChat(req, res) {
+  const requestController = new AbortController();
+  const requestSignal = requestController.signal;
+  res.on("close", () => {
+    if (!res.writableEnded) requestController.abort();
+  });
+
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
@@ -1249,7 +1259,12 @@ async function proxyChat(req, res) {
       return;
     }
     const continuationProject = wantsContinuation ? activeVideoProject : null;
-    const toolAction = await decideChatToolAction(messages, userContent, { activeVideoProject: continuationProject });
+    const toolAction = await decideChatToolAction(
+      messages,
+      userContent,
+      { activeVideoProject: continuationProject },
+      requestSignal
+    );
     const intent = toolAction.action;
 
     if (intent === "image" || intent === "video") {
@@ -1283,8 +1298,16 @@ async function proxyChat(req, res) {
               : ""
           : "";
         const result = intent === "video"
-          ? await callVideoWithContinuityCheck(generationPrompt, { imageUrl, seconds: videoPlan?.segmentSeconds }, (message) => writeSse(res, message))
-          : await callGenerationApi(intent, generationPrompt, { imageUrl, seconds: videoPlan?.segmentSeconds });
+          ? await callVideoWithContinuityCheck(
+              generationPrompt,
+              { imageUrl, seconds: videoPlan?.segmentSeconds, signal: requestSignal },
+              (message) => writeSse(res, message)
+            )
+          : await callGenerationApi(intent, generationPrompt, {
+              imageUrl,
+              seconds: videoPlan?.segmentSeconds,
+              signal: requestSignal
+            });
         if (intent === "video" && result.task && !result.resultUrl) {
           const resultLine = `视频任务已提交，正在等待上游生成。\n任务 ID：${result.task.taskId}\n状态：${result.task.status || "queued"}\n上游暂未返回可播放地址，取得视频后才能继续提取尾帧。`;
           assistantText = resultLine;
@@ -1349,6 +1372,7 @@ async function proxyChat(req, res) {
         });
         writeSse(res, resultLine);
       } catch (error) {
+        if (requestSignal.aborted) throw error;
         assistantText = `${intent === "video" ? "视频" : "图片"}生成失败，请稍后重试。\n[TECHNICAL_DETAILS]${error.message}[/TECHNICAL_DETAILS]`;
         if (pool) await updateGenerationTask(taskId, { status: "failed", metadata: { error: error.message, router: toolAction, videoPlan } });
         writeSse(res, assistantText);
@@ -1371,7 +1395,8 @@ async function proxyChat(req, res) {
         messages: upstreamMessages,
         temperature: Number(payload.temperature ?? 0.7),
         stream: true
-      })
+      }),
+      signal: requestSignal
     });
 
     if (!upstream.body) {
@@ -1392,6 +1417,7 @@ async function proxyChat(req, res) {
     }
     res.end();
   } catch (error) {
+    if (requestSignal.aborted || res.destroyed) return;
     if (!res.headersSent) {
       sendJson(res, 502, { error: `Upstream request failed: ${error.message}` });
       return;

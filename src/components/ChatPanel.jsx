@@ -122,9 +122,33 @@ function CopyCard({ lang, value }) {
   );
 }
 
+function getTaskStage(content) {
+  const text = String(content || "");
+  if (/提取尾帧|tail frame/i.test(text)) return "正在提取尾帧";
+  if (/生成视频|video generation/i.test(text)) return "正在生成视频";
+  if (/生成图片|image generation/i.test(text)) return "正在生成图片";
+  if (/拼接|stitch/i.test(text)) return "正在整理视频";
+  if (text.trim()) return "正在整理结果";
+  return "正在分析请求";
+}
+
+function TaskProgress({ content }) {
+  return (
+    <div className="relay-task-progress" role="status" aria-live="polite">
+      <div className="relay-task-progress__head">
+        <span>{getTaskStage(content)}</span>
+        <small>可随时中断</small>
+      </div>
+      <div className="relay-task-progress__track" aria-hidden="true">
+        <span />
+      </div>
+    </div>
+  );
+}
+
 const MessageContent = memo(function MessageContent({ content, loading }) {
   const [failedUrls, setFailedUrls] = useState([]);
-  const safeContent = content || (loading ? "Receiving signal..." : "");
+  const safeContent = content || "";
   const parsedContent = splitTechnicalDetails(safeContent);
   const urls = getMediaUrls(parsedContent.content);
   const textOnly = urls.reduce((text, url) => text.replace(url, "").trim(), parsedContent.content);
@@ -185,6 +209,7 @@ const MessageContent = memo(function MessageContent({ content, loading }) {
           <pre>{parsedContent.details}</pre>
         </details>
       ) : null}
+      {loading ? <TaskProgress content={content} /> : null}
     </div>
   );
 });
@@ -206,6 +231,7 @@ export default function ChatPanel({ config }) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const firstFrameInputRef = useRef(null);
+  const requestAbortRef = useRef(null);
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) || conversations[0],
@@ -252,6 +278,8 @@ export default function ChatPanel({ config }) {
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
   }, [input]);
+
+  useEffect(() => () => requestAbortRef.current?.abort(), []);
 
   function updateConversation(id, updater) {
     setConversations((current) =>
@@ -497,6 +525,8 @@ export default function ChatPanel({ config }) {
     setAttachments([]);
     setReferenceMode("auto");
     setLoading(true);
+    const requestController = new AbortController();
+    requestAbortRef.current = requestController;
 
     let text = "";
     let streamFrame = 0;
@@ -517,6 +547,7 @@ export default function ChatPanel({ config }) {
         messages: nextMessages,
         attachments: submittedAttachments,
         referenceMode,
+        signal: requestController.signal,
         onToken(token) {
           text += token;
           if (!streamFrame) streamFrame = requestAnimationFrame(renderStream);
@@ -531,15 +562,24 @@ export default function ChatPanel({ config }) {
       setHistoryError("");
     } catch (error) {
       if (streamFrame) cancelAnimationFrame(streamFrame);
+      const stopped = error.name === "AbortError" || requestController.signal.aborted;
+      const resultText = stopped
+        ? `${text.trim()}${text.trim() ? "\n\n" : ""}任务已中断。`
+        : `Request failed: ${error.message}`;
       updateConversation(conversationId, (conversation) => ({
         ...conversation,
         updatedAt: Date.now(),
-        messages: [...nextMessages, { role: "assistant", content: `Request failed: ${error.message}` }]
+        messages: [...nextMessages, { role: "assistant", content: resultText }]
       }));
     } finally {
       if (streamFrame) cancelAnimationFrame(streamFrame);
+      if (requestAbortRef.current === requestController) requestAbortRef.current = null;
       setLoading(false);
     }
+  }
+
+  function handleStopGeneration() {
+    requestAbortRef.current?.abort();
   }
 
   return (
@@ -828,14 +868,19 @@ export default function ChatPanel({ config }) {
             placeholder="输入消息…"
           />
           <button
-            type="submit"
+            className={loading ? "relay-stop-button" : ""}
+            type={loading ? "button" : "submit"}
+            onClick={loading ? handleStopGeneration : undefined}
             disabled={
-              loading
-              || (!input.trim() && !attachments.length && !(referenceMode === "manual" && uploadedImage))
+              !loading
+              && !input.trim()
+              && !attachments.length
+              && !(referenceMode === "manual" && uploadedImage)
             }
-            aria-label="Send"
+            aria-label={loading ? "停止当前任务" : "发送"}
+            title={loading ? "先中断当前任务，再继续发送" : "发送"}
           >
-            →
+            {loading ? <span className="relay-stop-button__icon" /> : "→"}
           </button>
         </form>
       </div>

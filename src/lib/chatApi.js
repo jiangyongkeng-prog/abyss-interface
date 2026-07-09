@@ -11,11 +11,12 @@ function extractTokenFromLine(line) {
   }
 }
 
-export async function sendChat({ conversationId, model, messages, attachments, referenceMode, onToken }) {
+export async function sendChat({ conversationId, model, messages, attachments, referenceMode, signal, onToken }) {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ conversationId, model, messages, attachments, referenceMode, temperature: 0.7 })
+    body: JSON.stringify({ conversationId, model, messages, attachments, referenceMode, temperature: 0.7 }),
+    signal
   });
 
   if (!response.ok) {
