@@ -1336,6 +1336,18 @@ button {
   font-size: 1.1rem;
 }
 
+.relay-history__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.relay-history__close,
+.relay-history-toggle,
+.relay-history-scrim {
+  display: none;
+}
+
 .relay-history__list {
   min-height: 0;
   overflow-y: auto;
@@ -1349,10 +1361,11 @@ button {
   position: relative;
   width: 100%;
   min-height: 74px;
-  padding: 13px 34px 13px 14px;
+  padding: 0;
   border-radius: 18px;
   text-align: left;
   background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
 }
 
 .relay-history__item.active {
@@ -1361,7 +1374,19 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.relay-history__item span {
+.relay-history__select {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  min-height: 74px;
+  padding: 13px 44px 13px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.relay-history__select span {
   display: block;
   overflow: hidden;
   color: var(--text);
@@ -1372,28 +1397,32 @@ button {
   white-space: nowrap;
 }
 
-.relay-history__item small {
+.relay-history__select small {
   margin-top: 8px;
   font-size: 0.64rem;
 }
 
-.relay-history__item i {
+.relay-history__delete {
   position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 20px;
-  height: 20px;
+  top: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
+  border: 1px solid rgba(49, 78, 55, 0.12);
   border-radius: 50%;
-  color: rgba(236, 249, 255, 0.55);
-  font-style: normal;
-  font-size: 0.75rem;
+  color: rgba(31, 52, 37, 0.58);
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.78;
 }
 
-.relay-history__item i:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+.relay-history__delete:hover {
+  color: #1d2d22;
+  background: rgba(255, 255, 255, 0.92);
+  opacity: 1;
 }
 
 .relay-main {
@@ -1489,6 +1518,8 @@ button {
 .relay-console__messages {
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
   display: grid;
   align-content: start;
   gap: 20px;
@@ -1500,10 +1531,48 @@ button {
   max-width: min(86%, 980px);
   display: grid;
   gap: 8px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
 }
 
 .relay-message.user {
   justify-self: end;
+}
+
+.relay-message__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.relay-message__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.relay-message:hover .relay-message__actions,
+.relay-message:focus-within .relay-message__actions {
+  opacity: 1;
+}
+
+.relay-message__actions button {
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: rgba(31, 52, 37, 0.66);
+  border: 1px solid rgba(49, 78, 55, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.relay-message__actions button:hover {
+  color: #17251d;
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .relay-message__body {
@@ -1526,12 +1595,83 @@ button {
   background: rgba(133, 239, 255, 0.11);
 }
 
+.relay-copy-card {
+  width: min(100%, 900px);
+  overflow: hidden;
+  border: 1px solid rgba(49, 78, 55, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #17251d;
+}
+
+.relay-copy-card__head {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid rgba(49, 78, 55, 0.1);
+}
+
+.relay-copy-card__head > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.relay-copy-card__head button {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.relay-copy-card pre {
+  margin: 0;
+  overflow: visible;
+  padding: 12px;
+  color: #17251d;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.relay-error-details {
+  width: min(100%, 760px);
+  overflow: hidden;
+  border: 1px solid rgba(151, 78, 64, 0.18);
+  border-radius: 12px;
+  color: #51332d;
+  background: rgba(255, 245, 241, 0.78);
+}
+
+.relay-error-details summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.relay-error-details pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 0 12px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
 .relay-media {
   max-width: min(100%, 860px);
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: 8px;
   background: rgba(2, 9, 14, 0.68);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 10px 28px rgba(34, 54, 39, 0.16);
 }
 
 .relay-media--image {
@@ -1569,17 +1709,200 @@ button {
 
 .relay-console__composer {
   display: grid;
-  grid-template-columns: 1fr 54px;
+  grid-template-columns: 42px 1fr 54px;
+  align-items: end;
   gap: 12px;
   padding: 18px 24px 24px;
   border-top: 1px solid var(--line-soft);
 }
 
+.relay-reference-mode {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 4px;
+  border: 1px solid rgba(49, 78, 55, 0.12);
+  border-radius: 12px;
+  background: rgba(238, 245, 234, 0.82);
+}
+
+.relay-console__composer .relay-reference-mode button {
+  width: auto;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  color: rgba(31, 52, 37, 0.64);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.relay-console__composer .relay-reference-mode button.active {
+  color: #f8fbf4;
+  background: #2f6b43;
+}
+
+.relay-upload-input {
+  display: none;
+}
+
+.relay-attachment-list {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.relay-attachment-chip {
+  min-width: 210px;
+  max-width: min(360px, 100%);
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px;
+  border: 1px solid rgba(55, 89, 62, 0.14);
+  border-radius: 9px;
+  background: rgba(250, 253, 248, 0.72);
+}
+
+.relay-attachment-chip img,
+.relay-attachment-chip__kind {
+  width: 38px;
+  height: 38px;
+  border-radius: 7px;
+}
+
+.relay-attachment-chip img {
+  object-fit: cover;
+}
+
+.relay-attachment-chip__kind {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #446b50;
+  font-size: 0.64rem;
+  font-weight: 850;
+}
+
+.relay-attachment-chip__kind.video {
+  background: #506780;
+}
+
+.relay-attachment-chip > span:nth-child(2) {
+  min-width: 0;
+}
+
+.relay-attachment-chip strong,
+.relay-attachment-chip small {
+  display: block;
+  overflow: hidden;
+  color: #263129;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-attachment-chip strong {
+  font-size: 0.78rem;
+}
+
+.relay-attachment-chip small {
+  margin-top: 3px;
+  color: #738078;
+  font-size: 0.66rem;
+}
+
+.relay-console__composer .relay-attachment-chip button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  color: #59665d;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: none;
+  font-size: 1rem;
+}
+
+.relay-console__composer.is-dragging {
+  border-color: rgba(49, 90, 67, 0.56);
+  box-shadow:
+    0 18px 46px rgba(40, 68, 47, 0.16),
+    inset 0 0 0 2px rgba(49, 90, 67, 0.16);
+}
+
+.relay-upload-chip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid rgba(49, 78, 55, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.relay-upload-chip img {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.relay-upload-chip span {
+  min-width: 0;
+  overflow: hidden;
+  color: #17251d;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.relay-upload-chip span strong,
+.relay-upload-chip span small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-upload-chip span small {
+  margin-top: 4px;
+  color: rgba(31, 52, 37, 0.58);
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.relay-console__composer .relay-upload-chip button {
+  width: auto;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: #17251d;
+  font-size: 0.74rem;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: none;
+}
+
+.relay-console__composer .relay-upload-button {
+  width: 42px;
+  height: 42px;
+  color: #1d2d22;
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: none;
+}
+
 .relay-console__composer textarea {
   min-height: 54px;
-  max-height: 140px;
+  max-height: 220px;
   padding: 16px;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
 }
 
 .relay-console__composer button {
@@ -1608,13 +1931,13 @@ button {
     radial-gradient(circle at 76% 0%, rgba(203, 231, 183, 0.42), transparent 30%),
     radial-gradient(circle at 18% 82%, rgba(118, 160, 113, 0.16), transparent 34%),
     linear-gradient(180deg, rgba(250, 252, 247, 0.94), rgba(238, 246, 233, 0.96)),
-    url("/assets/console-forest-bg.png") center / cover fixed no-repeat,
+    url("/assets/console-forest-bg.png") center / cover no-repeat,
     #eef5ea;
 }
 
 .console-depth-field,
 .console-current {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
 }
@@ -1646,8 +1969,8 @@ button {
   gap: 20px;
   padding: 0 20px 0 304px;
   border-bottom: 1px solid rgba(49, 78, 55, 0.12);
-  background: rgba(250, 252, 247, 0.78);
-  backdrop-filter: blur(18px) saturate(1.05);
+  background: rgba(250, 252, 247, 0.96);
+  backdrop-filter: none;
 }
 
 .console-brand {
@@ -1860,12 +2183,16 @@ button {
 .command-deck .relay-console__messages {
   width: calc(100% - 48px);
   justify-self: start;
-  gap: 24px;
-  padding: 28px 0 190px 24px;
+  gap: 18px;
+  padding: 28px 0 28px 24px;
 }
 
 .command-deck .relay-message {
-  max-width: min(72%, 780px);
+  max-width: min(84%, 980px);
+}
+
+.command-deck .relay-message.user {
+  max-width: min(62%, 680px);
 }
 
 .command-deck .relay-history {
@@ -1914,9 +2241,9 @@ button {
 .command-deck .relay-history__item {
   min-height: 42px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 8px;
   background: transparent;
-  padding: 10px 34px 10px 12px;
+  padding: 0;
 }
 
 .command-deck .relay-history__item.active,
@@ -1937,6 +2264,7 @@ button {
 .command-deck .relay-main {
   position: relative;
   overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(250, 253, 247, 0.78)),
     radial-gradient(circle at 84% 18%, rgba(193, 222, 173, 0.18), transparent 32%);
@@ -1951,7 +2279,7 @@ button {
     linear-gradient(90deg, rgba(252, 255, 249, 0.82), rgba(252, 255, 249, 0.58) 48%, rgba(252, 255, 249, 0.76)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(239, 247, 232, 0.34)),
     url("/assets/console-forest-chat-bg.png") center / cover no-repeat;
-  opacity: 0.78;
+  opacity: 0.62;
 }
 
 .command-deck .relay-main > * {
@@ -1976,30 +2304,33 @@ button {
   padding: 0;
   font-size: 1.02rem;
   line-height: 1.72;
+  max-width: 78ch;
 }
 
 .command-deck .relay-message.user p {
-  border-radius: 20px;
+  border-radius: 12px;
   background: rgba(48, 87, 56, 0.09);
   padding: 12px 16px;
 }
 
 .command-deck .relay-console__composer {
-  position: absolute;
-  left: 24px;
-  bottom: 24px;
+  position: relative;
+  left: auto;
+  bottom: auto;
   width: calc(100% - 48px);
+  justify-self: start;
+  margin: 0 24px 24px;
   transform: none;
   border: 1px solid rgba(49, 78, 55, 0.12);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 48px rgba(48, 79, 58, 0.13);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 24px rgba(48, 79, 58, 0.1);
   padding: 10px 12px 10px 18px;
 }
 
 .command-deck .relay-console__composer textarea {
   min-height: 42px;
-  max-height: 160px;
+  max-height: 220px;
   border: 0;
   background: transparent;
   color: #17251d;
@@ -2012,6 +2343,372 @@ button {
   color: #f8fbf4;
   background: #2f6b43;
   box-shadow: none;
+}
+
+.command-deck .relay-console__composer .relay-upload-chip button {
+  width: auto;
+  height: 32px;
+  color: #17251d;
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.command-deck .relay-console__composer .relay-reference-mode button {
+  width: auto;
+  height: 30px;
+  color: rgba(31, 52, 37, 0.64);
+  background: transparent;
+}
+
+.command-deck .relay-console__composer .relay-reference-mode button.active {
+  color: #f8fbf4;
+  background: #2f6b43;
+}
+
+.command-deck .relay-console__composer .relay-upload-button {
+  color: #1d2d22;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+/* Console visual polish */
+.console-page {
+  background: #f2f4f0;
+}
+
+.console-depth-field {
+  opacity: 0.22;
+}
+
+.console-current {
+  opacity: 0.34;
+  background:
+    linear-gradient(rgba(247, 250, 244, 0.5), rgba(232, 241, 227, 0.38)),
+    url("/assets/console-forest-bg.png") center / cover no-repeat;
+}
+
+.console-topbar {
+  color: #202923;
+  border-bottom-color: #dfe4dd;
+  background: #fafbf8;
+}
+
+.console-status span {
+  color: #59655d;
+  border-color: #dfe4dd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.console-lock {
+  color: #f8fbf7;
+  border-color: #355e47;
+  border-radius: 8px;
+  background: #355e47;
+}
+
+.command-deck .relay-console {
+  background: #f5f6f3;
+}
+
+.command-deck .relay-history {
+  border-right: 1px solid rgba(235, 220, 180, 0.42);
+  color: #eef3ef;
+  background: #2c3a31;
+  box-shadow:
+    inset -1px 0 rgba(255, 255, 255, 0.08),
+    12px 0 34px rgba(33, 48, 38, 0.12);
+}
+
+.command-deck .relay-history::before {
+  background:
+    linear-gradient(rgba(32, 47, 37, 0.5), rgba(28, 42, 33, 0.72)),
+    url("/assets/console-forest-history-bg.png") left bottom / cover no-repeat;
+  opacity: 1;
+}
+
+.command-deck .relay-history__head {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.command-deck .relay-history__head span,
+.command-deck .relay-history__item small {
+  color: #95a39a;
+}
+
+.command-deck .relay-history__head strong,
+.command-deck .relay-history__item span {
+  color: #f3f6f3;
+}
+
+.command-deck .relay-history__head button {
+  color: #253128;
+  border-color: #d9c18c;
+  background: #d9c18c;
+}
+
+.command-deck .relay-history__item {
+  color: #eef3ef;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(26, 39, 31, 0.18);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.command-deck .relay-history__item.active {
+  border-color: rgba(235, 211, 157, 0.4);
+  background: rgba(48, 67, 55, 0.68);
+  box-shadow: inset 3px 0 0 #d9c18c;
+}
+
+.command-deck .relay-history__item:hover {
+  background: rgba(54, 72, 61, 0.58);
+}
+
+.command-deck .relay-console .relay-history__select {
+  padding-left: 16px;
+  color: inherit;
+  border: 0;
+  background: transparent;
+}
+
+.command-deck .relay-history__delete {
+  color: #aeb9b1;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.command-deck .relay-history__delete:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.command-deck .relay-main {
+  background: #edf3e9;
+}
+
+.command-deck .relay-main::before {
+  background:
+    linear-gradient(90deg, rgba(250, 252, 248, 0.82), rgba(245, 249, 241, 0.68) 52%, rgba(248, 251, 245, 0.78)),
+    linear-gradient(rgba(244, 249, 240, 0.32), rgba(235, 243, 230, 0.4)),
+    url("/assets/console-forest-chat-bg.png") center / cover no-repeat;
+  opacity: 1;
+}
+
+.command-deck .relay-console__head {
+  width: 100%;
+  margin: 0;
+  padding: 20px clamp(24px, 4vw, 56px) 16px;
+  border-bottom: 1px solid #e0e4de;
+  background: rgba(250, 251, 248, 0.9);
+}
+
+.command-deck .relay-console__head span {
+  color: #748078;
+}
+
+.command-deck .relay-console__head h3 {
+  color: #202923;
+  font-size: 1.3rem;
+}
+
+.command-deck .relay-console__actions button {
+  min-height: 38px;
+  padding: 8px 13px;
+  border-color: #d9ded8;
+  border-radius: 8px;
+  color: #344038;
+  background: #fff;
+}
+
+.command-deck .relay-console__messages {
+  width: 100%;
+  gap: 22px;
+  padding: 28px clamp(24px, 4vw, 56px);
+  scrollbar-color: #a8b5ab transparent;
+}
+
+.command-deck .relay-message {
+  gap: 7px;
+}
+
+.command-deck .relay-message__meta > span {
+  color: #7c8980;
+  letter-spacing: 0.08em;
+}
+
+.command-deck .relay-message.assistant .relay-message__body > p {
+  width: fit-content;
+  max-width: 78ch;
+  padding: 13px 15px;
+  border: 1px solid #e0e4de;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(41, 55, 45, 0.04);
+}
+
+.command-deck .relay-message.user p {
+  color: #f7faf7;
+  border: 1px solid #315a43;
+  border-radius: 8px;
+  background: #315a43;
+  box-shadow: 0 6px 18px rgba(36, 67, 49, 0.12);
+}
+
+.command-deck .relay-message__actions button {
+  color: #5d6961;
+  border-color: #dce1db;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.command-deck .relay-copy-card {
+  border-color: #d9ded8;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(41, 55, 45, 0.05);
+}
+
+.command-deck .relay-copy-card__head {
+  min-height: 40px;
+  border-bottom-color: #e4e8e2;
+  background: #f3f5f1;
+}
+
+.command-deck .relay-copy-card__head > span {
+  color: #69756d;
+  letter-spacing: 0.06em;
+}
+
+.command-deck .relay-copy-card pre {
+  color: #27312a;
+  background: #fff;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.command-deck .relay-console__composer {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow:
+    0 18px 46px rgba(40, 68, 47, 0.16),
+    inset 0 1px rgba(255, 255, 255, 0.84),
+    0 0 0 1px rgba(68, 103, 75, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.command-deck .relay-reference-mode {
+  border-color: rgba(74, 105, 79, 0.13);
+  background: rgba(239, 245, 235, 0.66);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.7);
+}
+
+.command-deck .relay-console__composer .relay-reference-mode button.active {
+  color: #fff;
+  background: #315a43;
+}
+
+.command-deck .relay-console__composer textarea {
+  color: #27312a;
+}
+
+.command-deck .relay-console__composer textarea::placeholder {
+  color: #929c95;
+}
+
+.command-deck .relay-console__composer .relay-upload-button {
+  color: #536057;
+  border-color: rgba(67, 99, 72, 0.14);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.command-deck .relay-console__composer > button[type="submit"] {
+  color: #fff;
+  border-color: #315a43;
+  background: #315a43;
+}
+
+.relay-history-collapse {
+  display: grid;
+  place-items: center;
+}
+
+.command-deck .relay-console {
+  transition: grid-template-columns 0.22s ease;
+}
+
+.command-deck .relay-console.is-history-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.command-deck .relay-console.is-history-collapsed .relay-history__head {
+  justify-content: center;
+  padding: 18px 8px;
+}
+
+.command-deck .relay-console.is-history-collapsed .relay-history__head > div:first-child,
+.command-deck .relay-console.is-history-collapsed .relay-history__list,
+.command-deck .relay-console.is-history-collapsed
+  .relay-history__head-actions
+  > button[aria-label="New chat"] {
+  display: none;
+}
+
+.command-deck .relay-console.is-history-collapsed .relay-history__head-actions {
+  justify-content: center;
+}
+
+.console-page:has(.relay-console.is-history-collapsed) .console-topbar {
+  padding-left: 90px;
+  transition: padding-left 0.22s ease;
+}
+
+.relay-message.reply-skin-0 {
+  --reply-background: url("/assets/ai-reply-bg-1.webp");
+}
+
+.relay-message.reply-skin-1 {
+  --reply-background: url("/assets/ai-reply-bg-2.webp");
+}
+
+.relay-message.reply-skin-2 {
+  --reply-background: url("/assets/ai-reply-bg-3.webp");
+}
+
+.relay-message.reply-skin-3 {
+  --reply-background: url("/assets/ai-reply-bg-4.webp");
+}
+
+.relay-message.reply-skin-4 {
+  --reply-background: url("/assets/ai-reply-bg-5.webp");
+}
+
+.command-deck .relay-message.assistant[class*="reply-skin-"] {
+  width: min(84%, 980px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.command-deck .relay-message.assistant[class*="reply-skin-"] .relay-message__body > p {
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.82), rgba(250, 253, 248, 0.68)),
+    var(--reply-background);
+  background-position: center;
+  background-size: cover;
+}
+
+.command-deck .relay-message.assistant[class*="reply-skin-"] .relay-copy-card {
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(248, 252, 246, 0.62)),
+    var(--reply-background);
+  background-position: center;
+  background-size: cover;
+}
+
+.command-deck .relay-message.assistant[class*="reply-skin-"] .relay-copy-card__head {
+  background: rgba(239, 244, 236, 0.82);
+}
+
+.command-deck .relay-message.assistant[class*="reply-skin-"] .relay-copy-card pre {
+  background: rgba(255, 255, 255, 0.58);
 }
 
 /* Footer */
@@ -2246,19 +2943,85 @@ button {
     height: 820px;
     min-height: 720px;
     grid-template-columns: 1fr;
-    grid-template-rows: 190px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
-  .relay-history {
-    border-right: 0;
-    border-bottom: 1px solid var(--line-soft);
+  .command-deck .relay-history {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    width: min(86vw, 320px);
+    border-right: 1px solid var(--line-soft);
+    border-bottom: 0;
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    box-shadow: 18px 0 48px rgba(17, 35, 23, 0.18);
+  }
+
+  .command-deck .relay-history.is-open {
+    transform: translateX(0);
+  }
+
+  .command-deck .relay-history-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 19;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: rgba(20, 39, 26, 0.24);
+    backdrop-filter: blur(2px);
+  }
+
+  .relay-history__close,
+  .relay-history-toggle {
+    display: grid;
+    place-items: center;
+  }
+
+  .relay-history-collapse {
+    display: none;
+  }
+
+  .command-deck .relay-console.is-history-collapsed .relay-history__head {
+    justify-content: space-between;
+    padding: 18px 18px 14px;
+  }
+
+  .command-deck .relay-console.is-history-collapsed .relay-history__head > div:first-child {
+    display: block;
+  }
+
+  .command-deck .relay-console.is-history-collapsed .relay-history__list {
+    display: grid;
+  }
+
+  .command-deck .relay-console.is-history-collapsed
+    .relay-history__head-actions
+    > button[aria-label="New chat"] {
+    display: grid;
+  }
+
+  .relay-history-toggle {
+    float: left;
+    width: 34px;
+    height: 34px;
+    margin: 0 10px 0 0;
+    border-radius: 9px;
+    font-size: 1rem;
+  }
+
+  .relay-history__close {
+    font-size: 1rem;
   }
 
   .relay-history__list {
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(170px, 220px);
-    overflow-x: auto;
-    overflow-y: hidden;
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .relay-history__item {
@@ -2275,6 +3038,10 @@ button {
 
   .relay-message {
     max-width: 100%;
+  }
+
+  .relay-message__actions {
+    opacity: 1;
   }
 
   .studio-footer {
@@ -2307,13 +3074,18 @@ button {
 
   .command-deck {
     margin-top: 18px;
+    height: max(620px, calc(100dvh - 176px));
   }
 
   .command-deck .relay-console {
-    height: 880px;
-    min-height: 800px;
+    height: 100%;
+    min-height: 0;
     grid-template-columns: 1fr;
-    grid-template-rows: 180px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .command-deck .relay-console.is-history-collapsed {
+    grid-template-columns: 1fr;
   }
 
   .command-deck .relay-console__settings {
@@ -2321,18 +3093,76 @@ button {
   }
 
   .command-deck .relay-console__composer {
-    left: 14px;
-    bottom: 16px;
+    left: auto;
+    bottom: auto;
     width: calc(100% - 28px);
+    margin: 0 14px 16px;
   }
 
   .command-deck .relay-console__head {
     width: calc(100% - 28px);
     margin-left: 14px;
+    gap: 10px;
+  }
+
+  .command-deck .relay-console__head h3 {
+    white-space: nowrap;
+    font-size: 1.18rem;
+  }
+
+  .command-deck .relay-console__actions {
+    gap: 6px;
+  }
+
+  .command-deck .relay-console__actions button {
+    padding: 8px 10px;
   }
 
   .command-deck .relay-console__messages {
     width: calc(100% - 28px);
-    padding-left: 14px;
+    padding: 22px 0 22px 14px;
+    overflow-x: hidden;
+  }
+
+  .command-deck .relay-message {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .command-deck .relay-message.assistant[class*="reply-skin-"] {
+    width: 100%;
+    max-width: 100%;
+    padding: 10px;
+  }
+
+  .command-deck .relay-message.user {
+    width: fit-content;
+    max-width: 85%;
+  }
+
+  .relay-reference-mode {
+    width: 100%;
+  }
+
+  .relay-console__composer .relay-reference-mode button {
+    flex: 1;
+    padding: 0 6px;
+  }
+
+  .relay-upload-chip {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+  }
+
+  .relay-attachment-list {
+    display: grid;
+  }
+
+  .relay-attachment-chip {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .relay-upload-chip > button:first-of-type {
+    display: none;
   }
 }
