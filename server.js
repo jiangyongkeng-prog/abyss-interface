@@ -24,6 +24,10 @@ const CHAT_MODEL = process.env.CHAT_MODEL || process.env.RELAY_MODEL || "gpt-5.5
 const IMAGE_API_BASE = normalizeApiBase(process.env.IMAGE_API_BASE || "");
 const IMAGE_API_KEY = process.env.IMAGE_API_KEY || "";
 const IMAGE_MODEL = process.env.IMAGE_MODEL || "gpt-image-2";
+const IMAGE_SIZE_DEFAULT = process.env.IMAGE_SIZE_DEFAULT || "1024x1024";
+const IMAGE_SIZE_SQUARE = process.env.IMAGE_SIZE_SQUARE || "1024x1024";
+const IMAGE_SIZE_LANDSCAPE = process.env.IMAGE_SIZE_LANDSCAPE || "1792x1024";
+const IMAGE_SIZE_PORTRAIT = process.env.IMAGE_SIZE_PORTRAIT || "1024x1792";
 const VIDEO_API_BASE = normalizeApiBase(process.env.VIDEO_API_BASE || "");
 const VIDEO_API_KEY = process.env.VIDEO_API_KEY || "";
 const VIDEO_MODEL = process.env.VIDEO_MODEL || "grok-imagine-video";
@@ -236,6 +240,24 @@ function detectGenerationIntent(content) {
   if (/\u751f\u6210\u89c6\u9891|\u751f\u89c6\u9891|\u505a\u89c6\u9891|\u89c6\u9891|video|animate|animation/.test(text)) return "video";
   if (/\u751f\u6210\u56fe\u7247|\u751f\u56fe|\u753b\u56fe|\u753b\u4e00\u5f20|\u56fe\u7247|\u56fe\u50cf|\u6d77\u62a5|image|picture|draw|poster/.test(text)) return "image";
   return "chat";
+}
+
+function resolveImageSize(prompt, preferredSize = IMAGE_SIZE_DEFAULT) {
+  const text = String(prompt || "")
+    .toLowerCase()
+    .replace(/[：]/g, ":")
+    .replace(/\s+/g, " ");
+
+  if (/(16\s*:\s*9|横屏|横版|宽屏|横向|landscape|wide|widescreen|youtube)/i.test(text)) {
+    return IMAGE_SIZE_LANDSCAPE;
+  }
+  if (/(9\s*:\s*16|竖屏|竖版|竖向|手机壁纸|手机屏幕|portrait|vertical|shorts|reels|tiktok)/i.test(text)) {
+    return IMAGE_SIZE_PORTRAIT;
+  }
+  if (/(1\s*:\s*1|方图|方形|正方形|square)/i.test(text)) {
+    return IMAGE_SIZE_SQUARE;
+  }
+  return preferredSize;
 }
 
 function extractJsonObject(value) {
@@ -1062,6 +1084,8 @@ async function callGenerationApi(type, prompt, options = {}) {
   if (!base || !apiKey) throw new Error(`${type.toUpperCase()} API is not configured`);
   const imageUrl = options.imageUrl || "";
   const seconds = Math.max(1, Number(options.seconds || VIDEO_SECONDS));
+  const imageSize = resolveImageSize(`${prompt}\n${options.userPrompt || ""}`);
+  const imageSizeAttempts = [imageSize, "1024x1024"].filter((size, index, list) => size && list.indexOf(size) === index);
   const generationText = imageUrl && !isImage ? buildReferenceLockedPrompt(prompt) : prompt;
   const videoMessages = imageUrl
     ? [
@@ -1112,7 +1136,11 @@ async function callGenerationApi(type, prompt, options = {}) {
   };
 
   const attempts = isImage
-    ? [{ label: "images", endpoint: buildApiEndpoint(base, "/images/generations"), body: { model, prompt, n: 1, size: "1024x1024" } }]
+    ? imageSizeAttempts.map((size) => ({
+        label: size === imageSize ? `images-${size}` : `images-fallback-${size}`,
+        endpoint: buildApiEndpoint(base, "/images/generations"),
+        body: { model, prompt, n: 1, size }
+      }))
     : [
         { label: "chat-video", endpoint: buildChatEndpoint(base), body: chatVideoBody }
       ];
@@ -1306,6 +1334,7 @@ async function proxyChat(req, res) {
           : await callGenerationApi(intent, generationPrompt, {
               imageUrl,
               seconds: videoPlan?.segmentSeconds,
+              userPrompt: userContent,
               signal: requestSignal
             });
         if (intent === "video" && result.task && !result.resultUrl) {
