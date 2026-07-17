@@ -1771,6 +1771,31 @@ button {
   border-top: 1px solid var(--line-soft);
 }
 
+.relay-composer-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.relay-console__composer .relay-composer-actions button {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  box-shadow: none;
+}
+
+.relay-console__composer .relay-video-button {
+  padding: 0;
+  color: #f7fbf4;
+  background: #315a43;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.relay-console__composer .relay-video-button:hover:not(:disabled) {
+  background: #244a35;
+  transform: translateY(-1px);
+}
+
 .relay-reference-mode {
   grid-column: 1 / -1;
   display: flex;
@@ -1950,6 +1975,248 @@ button {
   font-size: 0.72rem;
   background: rgba(255, 255, 255, 0.78);
   box-shadow: none;
+}
+
+.relay-video-dialog-backdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(18, 32, 23, 0.48);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.relay-video-dialog {
+  width: min(100%, 780px);
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 24px;
+  color: #1c2e22;
+  background: linear-gradient(145deg, #fbfdf8, #ecf3e9);
+  box-shadow: 0 30px 90px rgba(8, 22, 13, 0.34);
+  outline: none;
+}
+
+.relay-video-dialog__head,
+.relay-video-dialog__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 26px;
+}
+
+.relay-video-dialog__head {
+  border-bottom: 1px solid rgba(49, 90, 67, 0.12);
+}
+
+.relay-video-dialog__head span,
+.relay-video-dialog__head h2 {
+  display: block;
+  margin: 0;
+}
+
+.relay-video-dialog__head span {
+  color: #5a7d63;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+
+.relay-video-dialog__head h2 {
+  margin-top: 4px;
+  font-size: 1.35rem;
+}
+
+.relay-video-dialog__head > button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: #45604d;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  font-size: 1.35rem;
+}
+
+.relay-video-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 24px 26px 8px;
+}
+
+.relay-video-settings-grid label {
+  display: grid;
+  gap: 7px;
+}
+
+.relay-video-settings-grid label > span,
+.relay-video-reference__label {
+  color: #52705a;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.relay-video-settings-grid select,
+.relay-video-settings-grid output {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(49, 90, 67, 0.16);
+  border-radius: 11px;
+  color: #1e3426;
+  background: rgba(255, 255, 255, 0.8);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.relay-video-settings-grid output {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-video-reference {
+  padding: 18px 26px 8px;
+}
+
+.relay-video-reference__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.relay-video-reference__modes button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(49, 90, 67, 0.15);
+  border-radius: 9px;
+  color: #526c5a;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: none;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.relay-video-reference__modes button.active {
+  border-color: #315a43;
+  color: #fff;
+  background: #315a43;
+}
+
+.relay-first-frame-dropzone {
+  min-height: 108px;
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px dashed rgba(49, 90, 67, 0.38);
+  border-radius: 15px;
+  color: #3b5943;
+  background: rgba(246, 250, 243, 0.72);
+  cursor: pointer;
+  text-align: center;
+}
+
+.relay-first-frame-dropzone:focus-visible {
+  outline: 3px solid rgba(82, 137, 99, 0.3);
+  outline-offset: 2px;
+}
+
+.relay-first-frame-dropzone strong {
+  font-size: 0.84rem;
+}
+
+.relay-first-frame-dropzone > span,
+.relay-video-reference__hint {
+  margin: 0;
+  color: rgba(40, 70, 48, 0.64);
+  font-size: 0.74rem;
+}
+
+.relay-first-frame-preview {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.relay-first-frame-preview img {
+  width: 68px;
+  height: 68px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.relay-first-frame-preview span {
+  min-width: 0;
+}
+
+.relay-first-frame-preview strong,
+.relay-first-frame-preview small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-first-frame-preview small {
+  margin-top: 5px;
+  color: rgba(40, 70, 48, 0.64);
+  font-size: 0.72rem;
+}
+
+.relay-first-frame-preview button,
+.relay-video-dialog__foot button {
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 10px;
+  color: #334c3a;
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: none;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.relay-video-dialog__foot {
+  align-items: flex-end;
+  margin-top: 16px;
+  border-top: 1px solid rgba(49, 90, 67, 0.12);
+}
+
+.relay-video-dialog__foot > span {
+  max-width: 370px;
+  color: rgba(40, 70, 48, 0.64);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.relay-video-dialog__foot > div {
+  display: flex;
+  gap: 8px;
+}
+
+.relay-video-dialog__foot button.primary {
+  color: #fff;
+  background: #315a43;
+}
+
+.relay-video-dialog__foot button.primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .relay-console__composer textarea {
@@ -2841,23 +3108,43 @@ button {
 }
 
 .relay-message.reply-skin-0 {
-  --reply-background: url("/assets/ai-reply-bg-1.webp");
+  --reply-background: url("/assets/ai-reply-bg-6.webp");
 }
 
 .relay-message.reply-skin-1 {
-  --reply-background: url("/assets/ai-reply-bg-2.webp");
+  --reply-background: url("/assets/ai-reply-bg-7.webp");
 }
 
 .relay-message.reply-skin-2 {
-  --reply-background: url("/assets/ai-reply-bg-3.webp");
+  --reply-background: url("/assets/ai-reply-bg-8.webp");
 }
 
 .relay-message.reply-skin-3 {
-  --reply-background: url("/assets/ai-reply-bg-4.webp");
+  --reply-background: url("/assets/ai-reply-bg-9.webp");
 }
 
 .relay-message.reply-skin-4 {
-  --reply-background: url("/assets/ai-reply-bg-5.webp");
+  --reply-background: url("/assets/ai-reply-bg-10.webp");
+}
+
+.relay-message.reply-skin-5 {
+  --reply-background: url("/assets/ai-reply-bg-11.webp");
+}
+
+.relay-message.reply-skin-6 {
+  --reply-background: url("/assets/ai-reply-bg-12.webp");
+}
+
+.relay-message.reply-skin-7 {
+  --reply-background: url("/assets/ai-reply-bg-13.webp");
+}
+
+.relay-message.reply-skin-8 {
+  --reply-background: url("/assets/ai-reply-bg-14.webp");
+}
+
+.relay-message.reply-skin-9 {
+  --reply-background: url("/assets/ai-reply-bg-15.webp");
 }
 
 .command-deck .relay-message.assistant[class*="reply-skin-"] {

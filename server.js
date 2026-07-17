@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, unlink, writeFile } from "node:f
 import { existsSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, extname, join, normalize } from "node:path";
+import { basename, dirname, extname, join, normalize } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -31,7 +31,17 @@ const IMAGE_SIZE_PORTRAIT = process.env.IMAGE_SIZE_PORTRAIT || "1024x1792";
 const VIDEO_API_BASE = normalizeApiBase(process.env.VIDEO_API_BASE || "");
 const VIDEO_API_KEY = process.env.VIDEO_API_KEY || "";
 const VIDEO_MODEL = process.env.VIDEO_MODEL || "grok-imagine-video";
-const VIDEO_SECONDS = Math.max(1, Number(process.env.VIDEO_SECONDS || 6));
+const VIDEO_DURATION_OPTIONS = parseVideoDurationOptions(process.env.VIDEO_DURATION_OPTIONS || "6,10,12,16,20");
+const VIDEO_SECONDS = normalizeVideoSeconds(process.env.VIDEO_SECONDS, VIDEO_DURATION_OPTIONS.includes(10) ? 10 : VIDEO_DURATION_OPTIONS[0]);
+const VIDEO_SIZE = process.env.VIDEO_SIZE || "1280x720";
+const VIDEO_RESOLUTION_NAME = process.env.VIDEO_RESOLUTION_NAME || "720p";
+const VIDEO_PRESET = process.env.VIDEO_PRESET || "custom";
+const VIDEO_ASPECT_RATIO_OPTIONS = parseVideoOptionList(process.env.VIDEO_ASPECT_RATIO_OPTIONS || "16:9,9:16,1:1", ["16:9", "9:16", "1:1"]);
+const VIDEO_RESOLUTION_OPTIONS = parseVideoOptionList(process.env.VIDEO_RESOLUTION_OPTIONS || "480p,720p", ["480p", "720p"]);
+const VIDEO_PRESET_OPTIONS = parseVideoOptionList(process.env.VIDEO_PRESET_OPTIONS || "custom,normal,fun,spicy", ["custom", "normal", "fun", "spicy"]);
+const VIDEO_DEFAULT_ASPECT_RATIO = normalizeVideoAspectRatio(process.env.VIDEO_ASPECT_RATIO, inferVideoAspectRatio(VIDEO_SIZE));
+const VIDEO_DEFAULT_RESOLUTION = normalizeVideoResolution(VIDEO_RESOLUTION_NAME, VIDEO_RESOLUTION_OPTIONS.includes("720p") ? "720p" : VIDEO_RESOLUTION_OPTIONS[0]);
+const VIDEO_DEFAULT_PRESET = normalizeVideoPreset(VIDEO_PRESET, VIDEO_PRESET_OPTIONS.includes("custom") ? "custom" : VIDEO_PRESET_OPTIONS[0]);
 const VIDEO_CONTINUITY_RETRIES = Math.max(0, Number(process.env.VIDEO_CONTINUITY_RETRIES || 0));
 const VIDEO_CONTINUITY_MIN_SSIM = Math.max(0, Math.min(1, Number(process.env.VIDEO_CONTINUITY_MIN_SSIM || 0.74)));
 const DATABASE_URL = process.env.DATABASE_URL || "";
@@ -272,10 +282,70 @@ function extractJsonObject(value) {
   }
 }
 
-function normalizeVideoPlan(value) {
+function parseVideoDurationOptions(value) {
+  const durations = String(value || "")
+    .split(",")
+    .map((item) => Number(item.trim()))
+    .filter((seconds) => Number.isInteger(seconds) && seconds >= 1 && seconds <= 60);
+  const unique = [...new Set(durations)];
+  return unique.length ? unique : [10, 12];
+}
+
+function parseVideoOptionList(value, fallback) {
+  const options = String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const unique = [...new Set(options)];
+  return unique.length ? unique : fallback;
+}
+
+function inferVideoAspectRatio(size) {
+  const [width, height] = String(size || "").toLowerCase().split("x").map(Number);
+  if (!width || !height) return "16:9";
+  if (height > width) return "9:16";
+  if (width === height) return "1:1";
+  return "16:9";
+}
+
+function normalizeVideoAspectRatio(value, fallback = VIDEO_ASPECT_RATIO_OPTIONS[0]) {
+  const ratio = String(value || "").trim();
+  return VIDEO_ASPECT_RATIO_OPTIONS.includes(ratio) ? ratio : fallback;
+}
+
+function normalizeVideoResolution(value, fallback = VIDEO_RESOLUTION_OPTIONS[0]) {
+  const resolution = String(value || "").trim().toLowerCase();
+  return VIDEO_RESOLUTION_OPTIONS.includes(resolution) ? resolution : fallback;
+}
+
+function normalizeVideoPreset(value, fallback = VIDEO_PRESET_OPTIONS[0]) {
+  const preset = String(value || "").trim().toLowerCase();
+  return VIDEO_PRESET_OPTIONS.includes(preset) ? preset : fallback;
+}
+
+function videoSizeForAspectRatio(aspectRatio) {
+  if (aspectRatio === "9:16") return "720x1280";
+  if (aspectRatio === "1:1") return "1024x1024";
+  return VIDEO_SIZE;
+}
+
+function normalizeVideoSeconds(value, fallback = VIDEO_DURATION_OPTIONS[0]) {
+  const seconds = Number(value);
+  return VIDEO_DURATION_OPTIONS.includes(seconds) ? seconds : fallback;
+}
+
+function requestedVideoSeconds(content) {
+  const match = String(content || "").match(/(?:^|[^\d])(\d{1,2})\s*(?:秒|s(?:ec(?:onds?)?)?)/i);
+  return match ? normalizeVideoSeconds(match[1], null) : null;
+}
+
+function normalizeVideoPlan(value, requestedSeconds = null) {
   const plan = value && typeof value === "object" ? value : {};
-  const totalSeconds = Math.max(VIDEO_SECONDS, Number(plan.totalSeconds || plan.total_seconds || VIDEO_SECONDS) || VIDEO_SECONDS);
-  const segmentSeconds = Math.max(1, Math.min(VIDEO_SECONDS, Number(plan.segmentSeconds || plan.segment_seconds || VIDEO_SECONDS) || VIDEO_SECONDS));
+  const segmentSeconds = normalizeVideoSeconds(
+    requestedSeconds || plan.segmentSeconds || plan.segment_seconds || VIDEO_SECONDS,
+    VIDEO_SECONDS
+  );
+  const totalSeconds = Math.max(segmentSeconds, Number(plan.totalSeconds || plan.total_seconds || segmentSeconds) || segmentSeconds);
   const totalSegments = Math.max(1, Math.ceil(totalSeconds / segmentSeconds));
   const segmentIndex = Math.max(1, Math.min(totalSegments, Number(plan.segmentIndex || plan.segment_index || 1) || 1));
   return {
@@ -318,6 +388,7 @@ function buildReferenceLockedPrompt(prompt) {
 }
 
 async function decideChatToolAction(messages, userContent, context = {}, signal) {
+  const forceVideo = context.forceVideo === true;
   const recentMessages = messages
     .filter((message) => ["user", "assistant"].includes(message.role))
     .slice(-10)
@@ -347,9 +418,10 @@ async function decideChatToolAction(messages, userContent, context = {}, signal)
         "Choose chat when the user is brainstorming, asking for advice, planning a project, asking what to do, or has not clearly asked to generate now.",
         "Choose image only when the user clearly asks to create/generate/draw an image now.",
         "Choose video only when the user clearly asks to create/generate/animate a video now.",
+        forceVideo ? "The user explicitly pressed the separate Generate Video button. You must choose video and rewrite their text as a concise generation prompt." : "",
         "If the user asks for ideas before making a YouTube/TikTok/short video, choose chat.",
         "If the user asks for a video longer than one segment, generate only the next segment now and preserve a reusable basePrompt.",
-        `One video tool call can generate ${VIDEO_SECONDS} seconds at most.`,
+        `Native video durations supported by this tool are ${VIDEO_DURATION_OPTIONS.join(" or ")} seconds. If the user explicitly requests one of those durations, set both totalSeconds and segmentSeconds to that exact value. For longer videos, split them into ${VIDEO_DURATION_OPTIONS.join("/")}-second segments.`,
         "If the latest user says continue/继续 and active_video_project exists with unfinished segments, choose video for the next segment.",
         "For continued segments, prompt must explicitly continue the same subject, style, camera language, scene continuity, and avoid restarting with a different idea.",
         "If choosing image or video, rewrite prompt as a concise generation prompt in the user's language.",
@@ -395,16 +467,16 @@ async function decideChatToolAction(messages, userContent, context = {}, signal)
     const data = await response.json().catch(() => ({}));
     const content = data.choices?.[0]?.message?.content || "";
     const parsed = extractJsonObject(content);
-    const action = ["image", "video", "chat"].includes(parsed?.action) ? parsed.action : "chat";
+    const action = forceVideo ? "video" : ["image", "video", "chat"].includes(parsed?.action) ? parsed.action : "chat";
     return {
       action,
       prompt: String(parsed?.prompt || userContent || "").trim(),
       reason: String(parsed?.reason || "").trim(),
-      videoPlan: normalizeVideoPlan(parsed?.videoPlan)
+      videoPlan: normalizeVideoPlan(parsed?.videoPlan, requestedVideoSeconds(userContent))
     };
   } catch (error) {
     if (signal?.aborted) throw error;
-    return { action: "chat", prompt: userContent, reason: "router_failed", videoPlan: normalizeVideoPlan() };
+    return { action: forceVideo ? "video" : "chat", prompt: userContent, reason: "router_failed", videoPlan: normalizeVideoPlan({}, requestedVideoSeconds(userContent)) };
   }
 }
 
@@ -498,22 +570,31 @@ function toPublicAssetUrl(url, req) {
   return new URL(url, getPublicOrigin(req)).toString();
 }
 
+function findGeneratedResultUrl(value, depth = 0) {
+  if (depth > 8 || value == null) return "";
+  if (typeof value === "string") return findUrlInText(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = findGeneratedResultUrl(item, depth + 1);
+      if (url) return url;
+    }
+    return "";
+  }
+  if (typeof value === "object") {
+    for (const key of ["url", "result_url", "resultUrl", "video_url", "videoUrl", "content", "message", "output", "data", "choices", "video"]) {
+      if (!(key in value)) continue;
+      const url = findGeneratedResultUrl(value[key], depth + 1);
+      if (url) return url;
+    }
+  }
+  return "";
+}
+
 function extractResultUrl(data) {
   if (!data || typeof data !== "object") return "";
-  if (typeof data.url === "string") return cleanGeneratedUrl(data.url);
-  if (typeof data.result_url === "string") return cleanGeneratedUrl(data.result_url);
-  if (typeof data.video_url === "string") return cleanGeneratedUrl(data.video_url);
-  const contentUrl = findUrlInText(data.choices?.[0]?.message?.content);
-  if (contentUrl) return contentUrl;
-  if (typeof data.output === "string") return findUrlInText(data.output) || cleanGeneratedUrl(data.output);
-  if (Array.isArray(data.output)) {
-    const url = data.output.find((item) => typeof item === "string" && /^https?:\/\//.test(item));
-    if (url) return cleanGeneratedUrl(url);
-  }
   const first = Array.isArray(data.data) ? data.data[0] : null;
-  if (first?.url) return cleanGeneratedUrl(first.url);
   if (first?.b64_json) return `data:image/png;base64,${first.b64_json}`;
-  return "";
+  return findGeneratedResultUrl(data);
 }
 
 function extractGenerationTask(data) {
@@ -522,6 +603,63 @@ function extractGenerationTask(data) {
   const status = data.status || data.data?.status || "";
   if (!taskId) return null;
   return { taskId: String(taskId), status: String(status || "queued") };
+}
+
+function videoApiHeaders(apiKey) {
+  return {
+    "accept": "*/*",
+    "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "authorization": `Bearer ${apiKey}`,
+    "origin": "https://video.yunshuaiapi.com",
+    "referer": "https://video.yunshuaiapi.com/",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+  };
+}
+
+function waitFor(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function pollVideoGenerationTask(base, apiKey, taskId, signal, onProgress = () => {}) {
+  let lastProgress = "";
+  for (let attempt = 0; attempt < 72; attempt += 1) {
+    await waitFor(attempt === 0 ? 2000 : 5000);
+    const response = await fetch(buildApiEndpoint(base, `/video/generations/${encodeURIComponent(taskId)}`), {
+      headers: videoApiHeaders(apiKey),
+      signal
+    });
+    const text = await response.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { raw: text };
+    }
+    if (!response.ok) {
+      throw new Error(`Video status request failed: HTTP ${response.status} ${payload?.error?.message || payload?.message || text}`);
+    }
+
+    const task = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+    const status = String(task?.status || task?.state || payload?.status || payload?.state || "").toLowerCase();
+    const progress = String(task?.progress ?? task?.data?.progress ?? "");
+    const failureReason = task?.fail_reason || task?.failReason || task?.error?.message || payload?.error?.message || payload?.message;
+    const resultUrl = extractResultUrl(task) || extractResultUrl(payload);
+
+    if (resultUrl && ["done", "completed", "succeeded", "success", ""].includes(status)) {
+      return { data: payload, task: extractGenerationTask(payload), resultUrl };
+    }
+    if (["failure", "failed", "error", "expired", "cancelled", "canceled"].includes(status)) {
+      throw new Error(`Video generation ${status}${failureReason ? `: ${failureReason}` : ""}`);
+    }
+    if (["done", "completed", "succeeded", "success"].includes(status)) {
+      throw new Error("Video generation completed but the upstream did not return a playable result_url");
+    }
+    if (progress && progress !== lastProgress) {
+      onProgress(`视频生成中：${progress}\n`);
+      lastProgress = progress;
+    }
+  }
+  throw new Error(`Video generation timed out while waiting for task ${taskId}`);
 }
 
 function extensionFromContentType(contentType, type) {
@@ -594,9 +732,64 @@ async function saveGeneratedAssetBytes(bytes, filename, contentType) {
   return `/generated/${filename}`;
 }
 
-async function downloadGeneratedAsset(url, type, signal) {
-  if (!url || url.startsWith("data:")) return url;
+function localGeneratedAssetPath(url) {
+  const pathname = String(url || "").split("?")[0];
+  if (!pathname.startsWith("/generated/")) return "";
+  const filename = basename(pathname);
+  if (pathname !== `/generated/${filename}`) return "";
+  return join(PUBLIC, "generated", filename);
+}
+
+function isManagedReferenceImageUrl(url) {
+  if (localGeneratedAssetPath(url)) return true;
+  if (!canUseSupabaseStorage()) return false;
+  const prefix = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/${encodeURIComponent(SUPABASE_STORAGE_BUCKET)}/`;
+  return String(url || "").startsWith(prefix);
+}
+
+async function readAssetBytes(url, signal) {
+  const localPath = localGeneratedAssetPath(url);
+  if (localPath) {
+    return {
+      bytes: await readFile(localPath),
+      contentType: storageContentType(extname(localPath))
+    };
+  }
   const response = await fetch(url, { signal });
+  if (!response.ok) throw new Error(`Asset download failed: HTTP ${response.status}`);
+  return {
+    bytes: Buffer.from(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type") || ""
+  };
+}
+
+async function loadVideoReferenceImage(url, signal) {
+  const asset = await readAssetBytes(url, signal);
+  if (!asset.contentType.toLowerCase().startsWith("image/")) {
+    throw new Error("The uploaded first frame is not a supported image file");
+  }
+  const ext = extensionFromContentType(asset.contentType, "image");
+  return {
+    ...asset,
+    filename: `first-frame${ext}`,
+    source: url
+  };
+}
+
+function isSameApiOrigin(url, apiBase) {
+  try {
+    return new URL(url).origin === new URL(apiBase).origin;
+  } catch {
+    return false;
+  }
+}
+
+async function downloadGeneratedAsset(url, type, signal, authorization = "") {
+  if (!url || url.startsWith("data:")) return url;
+  let response = await fetch(url, { signal });
+  if (!response.ok && authorization && [401, 403].includes(response.status)) {
+    response = await fetch(url, { signal, headers: { "Authorization": `Bearer ${authorization}` } });
+  }
   if (!response.ok) throw new Error(`Generated asset download failed: HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";
   const ext = contentType ? extensionFromContentType(contentType, type) : extensionFromUrl(url, type);
@@ -770,16 +963,15 @@ async function handleUploadAsset(req, res) {
 }
 
 async function extractVideoTailFrame(videoUrl) {
-  if (!videoUrl || !/^https?:\/\//i.test(videoUrl)) return "";
-  const response = await fetch(videoUrl);
-  if (!response.ok) throw new Error(`Tail frame video download failed: HTTP ${response.status}`);
+  if (!videoUrl) return "";
+  const asset = await readAssetBytes(videoUrl);
 
   const tempDirectory = await mkdtemp(join(tmpdir(), "abyss-tail-"));
-  const inputPath = join(tempDirectory, `input-${randomUUID()}${extensionFromContentType(response.headers.get("content-type") || "", "video")}`);
+  const inputPath = join(tempDirectory, `input-${randomUUID()}${extensionFromContentType(asset.contentType, "video")}`);
   const outputPath = join(tempDirectory, `tail-${randomUUID()}.png`);
 
   try {
-    await writeFile(inputPath, Buffer.from(await response.arrayBuffer()));
+    await writeFile(inputPath, asset.bytes);
     await execFileAsync("ffmpeg", [
       "-y",
       "-sseof",
@@ -803,9 +995,8 @@ async function extractVideoTailFrame(videoUrl) {
 }
 
 async function downloadAssetToFile(url, filePath) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Asset download failed: HTTP ${response.status}`);
-  await writeFile(filePath, Buffer.from(await response.arrayBuffer()));
+  const asset = await readAssetBytes(url);
+  await writeFile(filePath, asset.bytes);
 }
 
 async function compareVideoFirstFrameToImage(videoUrl, frameUrl) {
@@ -1083,57 +1274,15 @@ async function callGenerationApi(type, prompt, options = {}) {
   const model = isImage ? IMAGE_MODEL : VIDEO_MODEL;
   if (!base || !apiKey) throw new Error(`${type.toUpperCase()} API is not configured`);
   const imageUrl = options.imageUrl || "";
-  const seconds = Math.max(1, Number(options.seconds || VIDEO_SECONDS));
+  const referenceImage = imageUrl && !isImage ? await loadVideoReferenceImage(imageUrl, options.signal) : null;
+  const seconds = normalizeVideoSeconds(options.seconds, VIDEO_SECONDS);
+  const videoAspectRatio = normalizeVideoAspectRatio(options.aspectRatio, VIDEO_DEFAULT_ASPECT_RATIO);
+  const videoResolution = normalizeVideoResolution(options.resolution, VIDEO_DEFAULT_RESOLUTION);
+  const videoPreset = normalizeVideoPreset(options.preset, VIDEO_DEFAULT_PRESET);
+  const videoSize = videoSizeForAspectRatio(videoAspectRatio);
   const imageSize = resolveImageSize(`${prompt}\n${options.userPrompt || ""}`);
   const imageSizeAttempts = [imageSize, "1024x1024"].filter((size, index, list) => size && list.indexOf(size) === index);
-  const generationText = imageUrl && !isImage ? buildReferenceLockedPrompt(prompt) : prompt;
-  const videoMessages = imageUrl
-    ? [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: generationText },
-            { type: "image_url", image_url: { url: imageUrl } }
-          ]
-        }
-      ]
-    : [{ role: "user", content: generationText }];
-
-  const videoBody = {
-    model,
-    messages: videoMessages,
-    temperature: 0.7,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-    stream: false,
-    seconds,
-    duration: seconds,
-    duration_seconds: seconds,
-    length: seconds,
-    size: "1280x720",
-    ...(imageUrl ? { image_url: imageUrl, image_urls: [imageUrl] } : {})
-  };
-  const chatVideoBody = {
-    model,
-    messages: videoMessages,
-    temperature: 0.7,
-    top_p: 1,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-    stream: false,
-    seconds: 5,
-    size: "1280x720",
-    ...(imageUrl ? { image_url: imageUrl, image_urls: [imageUrl] } : {})
-  };
-  const v1VideoBody = {
-    ...videoBody,
-    prompt: generationText,
-    seconds: String(seconds),
-    duration: String(seconds),
-    duration_seconds: String(seconds),
-    length: String(seconds)
-  };
+  const generationText = referenceImage ? buildReferenceLockedPrompt(prompt) : prompt;
 
   const attempts = isImage
     ? imageSizeAttempts.map((size) => ({
@@ -1141,16 +1290,40 @@ async function callGenerationApi(type, prompt, options = {}) {
         endpoint: buildApiEndpoint(base, "/images/generations"),
         body: { model, prompt, n: 1, size }
       }))
-    : [
-        { label: "chat-video", endpoint: buildChatEndpoint(base), body: chatVideoBody }
-      ];
+    : [{
+        label: "video-generations",
+        endpoint: buildApiEndpoint(base, "/video/generations"),
+        form: (() => {
+          const form = new FormData();
+          form.append("model", model);
+          form.append("prompt", generationText);
+          form.append("seconds", String(seconds));
+          form.append("size", videoSize);
+          form.append("resolution_name", videoResolution);
+          form.append("preset", videoPreset);
+          if (referenceImage) {
+            // Keep this aligned with the provider's own video console:
+            // image_intent=first declares the purpose and input_reference[] carries the file.
+            form.append("image_intent", "first");
+            form.append(
+              "input_reference[]",
+              new Blob([referenceImage.bytes], { type: referenceImage.contentType }),
+              referenceImage.filename
+            );
+          }
+          return form;
+        })()
+      }];
 
   const errors = [];
   for (const attempt of attempts) {
+    const isMultipartVideo = Boolean(attempt.form);
     const response = await fetch(attempt.endpoint, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify(attempt.body),
+      headers: isMultipartVideo
+        ? videoApiHeaders(apiKey)
+        : { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: isMultipartVideo ? attempt.form : JSON.stringify(attempt.body),
       signal: options.signal
     });
 
@@ -1163,12 +1336,18 @@ async function callGenerationApi(type, prompt, options = {}) {
     }
 
     if (response.ok) {
-      const sourceUrl = extractResultUrl(data);
+      let sourceUrl = extractResultUrl(data);
+      let task = null;
       if (!isImage && !sourceUrl) {
-        const task = extractGenerationTask(data);
+        task = extractGenerationTask(data);
         if (task) {
-          return { data: { ...data, endpoint: attempt.label, sourceUrl: "", ...task }, resultUrl: "", task };
+          const completed = await pollVideoGenerationTask(base, apiKey, task.taskId, options.signal, options.onProgress);
+          sourceUrl = completed.resultUrl;
+          task = completed.task || task;
+          data = { ...data, poll: completed.data };
         }
+      }
+      if (!sourceUrl) {
         const preview = typeof data.raw === "string"
           ? data.raw.slice(0, 300).replace(/\s+/g, " ").trim()
           : JSON.stringify(data).slice(0, 300);
@@ -1178,13 +1357,33 @@ async function callGenerationApi(type, prompt, options = {}) {
       let resultUrl = sourceUrl;
       if (sourceUrl) {
         try {
-          resultUrl = await downloadGeneratedAsset(sourceUrl, type, options.signal);
+          const videoAuthorization = !isImage && isSameApiOrigin(sourceUrl, base) ? apiKey : "";
+          resultUrl = await downloadGeneratedAsset(sourceUrl, type, options.signal, videoAuthorization);
         } catch (error) {
           if (options.signal?.aborted) throw error;
           data.downloadError = error.message;
         }
       }
-      return { data: { ...data, endpoint: attempt.label, sourceUrl }, resultUrl };
+      return {
+        data: {
+          ...data,
+          endpoint: attempt.label,
+          sourceUrl,
+          referenceImageAttached: Boolean(referenceImage),
+          referenceImageSource: referenceImage?.source || "",
+          referenceImageIntent: referenceImage ? "first" : "",
+          referenceImageField: referenceImage ? "input_reference[]" : "",
+          videoSettings: isImage ? undefined : {
+            seconds,
+            aspectRatio: videoAspectRatio,
+            size: videoSize,
+            resolution: videoResolution,
+            preset: videoPreset
+          }
+        },
+        resultUrl,
+        task
+      };
     }
 
     errors.push(`${attempt.label}: ${data.error?.message || data.message || text || `HTTP ${response.status}`}`);
@@ -1210,9 +1409,9 @@ async function callVideoWithContinuityCheck(prompt, options = {}, onProgress = (
           "",
           prompt
         ].join("\n");
-    const result = await callGenerationApi("video", attemptPrompt, options);
+    const result = await callGenerationApi("video", attemptPrompt, { ...options, onProgress });
     lastResult = result;
-    if (!referenceImageUrl || result.task || !result.resultUrl) return { ...result, continuityChecks: checks };
+    if (!referenceImageUrl || !result.resultUrl) return { ...result, continuityChecks: checks };
 
     let firstFrameSsim = null;
     let passed = false;
@@ -1255,6 +1454,12 @@ async function proxyChat(req, res) {
   const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
   const userContent = getLatestUserContent(messages);
   const referenceMode = ["auto", "manual", "none"].includes(payload.referenceMode) ? payload.referenceMode : "auto";
+  const requestedFirstFrameUrl = String(payload.firstFrameUrl || "").trim();
+  const selectedVideoSeconds = normalizeVideoSeconds(payload.videoSeconds, null);
+  const selectedVideoAspectRatio = normalizeVideoAspectRatio(payload.videoAspectRatio, VIDEO_DEFAULT_ASPECT_RATIO);
+  const selectedVideoResolution = normalizeVideoResolution(payload.videoResolution, VIDEO_DEFAULT_RESOLUTION);
+  const selectedVideoPreset = normalizeVideoPreset(payload.videoPreset, VIDEO_DEFAULT_PRESET);
+  const forceVideo = payload.forceVideo === true;
   let conversationId = payload.conversationId || "";
 
   try {
@@ -1290,7 +1495,7 @@ async function proxyChat(req, res) {
     const toolAction = await decideChatToolAction(
       messages,
       userContent,
-      { activeVideoProject: continuationProject },
+      { activeVideoProject: continuationProject, forceVideo },
       requestSignal
     );
     const intent = toolAction.action;
@@ -1306,7 +1511,7 @@ async function proxyChat(req, res) {
           : {}),
         basePrompt: toolAction.videoPlan?.basePrompt || continuationProject?.basePrompt || generationPrompt,
         continuity: toolAction.videoPlan?.continuity || continuationProject?.continuity || ""
-      }) : null;
+      }, continuationProject ? null : (selectedVideoSeconds || requestedVideoSeconds(userContent))) : null;
       if (pool) taskId = await createGenerationTask({ conversationId, messageId: userMessageId, type: intent, prompt: generationPrompt });
 
       try {
@@ -1317,7 +1522,12 @@ async function proxyChat(req, res) {
           ? `（第 ${videoPlan.segmentIndex}/${videoPlan.totalSegments} 段）`
           : "";
         writeSse(res, `正在生成${intent === "video" ? "视频" : "图片"}${progressText}…\n`);
-        const manualImageUrl = toPublicAssetUrl(getLatestUserImageUrl(messages), req);
+        const fallbackFirstFrameUrl = getLatestUserImageUrl(messages);
+        const manualImageUrl = isManagedReferenceImageUrl(requestedFirstFrameUrl)
+          ? requestedFirstFrameUrl
+          : isManagedReferenceImageUrl(fallbackFirstFrameUrl)
+            ? fallbackFirstFrameUrl
+            : "";
         const imageUrl = intent === "video"
           ? referenceMode === "manual"
             ? manualImageUrl
@@ -1328,7 +1538,14 @@ async function proxyChat(req, res) {
         const result = intent === "video"
           ? await callVideoWithContinuityCheck(
               generationPrompt,
-              { imageUrl, seconds: videoPlan?.segmentSeconds, signal: requestSignal },
+              {
+                imageUrl,
+                seconds: videoPlan?.segmentSeconds,
+                aspectRatio: selectedVideoAspectRatio,
+                resolution: selectedVideoResolution,
+                preset: selectedVideoPreset,
+                signal: requestSignal
+              },
               (message) => writeSse(res, message)
             )
           : await callGenerationApi(intent, generationPrompt, {
@@ -1359,7 +1576,7 @@ async function proxyChat(req, res) {
         if (intent === "video" && result.resultUrl && videoPlan?.segmentIndex < videoPlan?.totalSegments) {
           try {
             writeSse(res, "\n正在提取尾帧，供下一段使用…\n");
-            tailFrameUrl = await extractVideoTailFrame(toPublicAssetUrl(result.resultUrl, req));
+            tailFrameUrl = await extractVideoTailFrame(result.resultUrl);
           } catch (error) {
             tailFrameError = error.message;
           }
@@ -1371,12 +1588,13 @@ async function proxyChat(req, res) {
         const tailFrameHint = tailFrameUrl && videoPlan?.segmentIndex < videoPlan?.totalSegments
           ? "\n尾帧已保存。"
           : "";
-        const referenceHint = intent === "video" && imageUrl
+        const referenceAttached = Boolean(result.data?.referenceImageAttached);
+        const referenceHint = intent === "video" && referenceAttached
           ? referenceMode === "manual"
-            ? "\n本段已使用你上传的图片作为首帧参考。"
-            : "\n本段已使用上一段尾帧作为参考图。"
+            ? "\n本段已按中转站网页同款格式提交首帧（input_reference[] + image_intent=first）。"
+            : "\n本段已按中转站网页同款格式提交上一段尾帧（input_reference[] + image_intent=first）。"
           : intent === "video" && referenceMode === "manual"
-            ? "\n未找到本次上传的首帧图片，本段未使用参考图。"
+            ? "\n首帧文件未能附带到视频请求，本段没有生成。"
             : "";
         const latestContinuityCheck = result.continuityChecks?.at?.(-1);
         const continuityCheckHint = latestContinuityCheck
@@ -1502,7 +1720,16 @@ const server = http.createServer(async (req, res) => {
       backendKeyConfigured: Boolean(CHAT_API_KEY),
       databaseConfigured: Boolean(pool),
       imageConfigured: Boolean(IMAGE_API_BASE && IMAGE_API_KEY),
-      videoConfigured: Boolean(VIDEO_API_BASE && VIDEO_API_KEY)
+      videoConfigured: Boolean(VIDEO_API_BASE && VIDEO_API_KEY),
+      videoModel: VIDEO_MODEL,
+      videoDurations: VIDEO_DURATION_OPTIONS,
+      videoDefaultSeconds: VIDEO_SECONDS,
+      videoAspectRatios: VIDEO_ASPECT_RATIO_OPTIONS,
+      videoDefaultAspectRatio: VIDEO_DEFAULT_ASPECT_RATIO,
+      videoResolutions: VIDEO_RESOLUTION_OPTIONS,
+      videoDefaultResolution: VIDEO_DEFAULT_RESOLUTION,
+      videoPresets: VIDEO_PRESET_OPTIONS,
+      videoDefaultPreset: VIDEO_DEFAULT_PRESET
     });
     return;
   }

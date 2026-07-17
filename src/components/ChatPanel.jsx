@@ -3,7 +3,6 @@ import { sendChat } from "../lib/chatApi.js";
 
 const DEFAULT_TITLE = "New chat";
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const VIDEO_ASPECT_RATIO = 16 / 9;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const ATTACHMENT_ACCEPT = [
   "image/*",
@@ -66,6 +65,16 @@ function isVideoUrl(url) {
 
 function isImageUrl(url) {
   return /^data:image\//i.test(url) || /\.(png|jpe?g|webp|gif)(?:$|\?)/i.test(url);
+}
+
+function aspectRatioValue(value) {
+  const [width, height] = String(value || "16:9").split(":").map(Number);
+  return width && height ? width / height : 16 / 9;
+}
+
+function imageNeedsCropping(image, targetAspectRatio) {
+  if (!image?.aspectRatio) return false;
+  return Math.abs(image.aspectRatio - aspectRatioValue(targetAspectRatio)) > 0.08;
 }
 
 function splitCodeBlocks(content) {
@@ -226,12 +235,21 @@ export default function ChatPanel({ config }) {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [referenceMode, setReferenceMode] = useState("auto");
+  const [videoSeconds, setVideoSeconds] = useState(10);
+  const [videoAspectRatio, setVideoAspectRatio] = useState("16:9");
+  const [videoResolution, setVideoResolution] = useState("720p");
+  const [videoPreset, setVideoPreset] = useState("custom");
+  const [videoSettingsOpen, setVideoSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const firstFrameInputRef = useRef(null);
+  const videoDialogRef = useRef(null);
   const requestAbortRef = useRef(null);
+  const latestMessageRef = useRef(null);
+  const messageListRef = useRef(null);
+  const pendingHistoryScrollRef = useRef(false);
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) || conversations[0],
@@ -239,11 +257,27 @@ export default function ChatPanel({ config }) {
   );
 
   const messages = activeConversation?.messages || starterMessages;
+  const videoDurationOptions = useMemo(
+    () => Array.isArray(config.videoDurations) && config.videoDurations.length ? config.videoDurations : [6, 10, 12, 16, 20],
+    [config.videoDurations]
+  );
+  const videoAspectRatioOptions = useMemo(
+    () => Array.isArray(config.videoAspectRatios) && config.videoAspectRatios.length ? config.videoAspectRatios : ["16:9", "9:16", "1:1"],
+    [config.videoAspectRatios]
+  );
+  const videoResolutionOptions = useMemo(
+    () => Array.isArray(config.videoResolutions) && config.videoResolutions.length ? config.videoResolutions : ["480p", "720p"],
+    [config.videoResolutions]
+  );
+  const videoPresetOptions = useMemo(
+    () => Array.isArray(config.videoPresets) && config.videoPresets.length ? config.videoPresets : ["custom", "normal", "fun", "spicy"],
+    [config.videoPresets]
+  );
   const decoratedMessages = useMemo(() => {
     let assistantIndex = 0;
     return messages.map((message) => ({
       ...message,
-      replySkin: message.role === "assistant" ? assistantIndex++ % 5 : null
+      replySkin: message.role === "assistant" ? assistantIndex++ % 10 : null
     }));
   }, [messages]);
 
@@ -281,12 +315,68 @@ export default function ChatPanel({ config }) {
 
   useEffect(() => () => requestAbortRef.current?.abort(), []);
 
+  useEffect(() => {
+    if (!videoDurationOptions.includes(videoSeconds)) {
+      setVideoSeconds(videoDurationOptions.includes(config.videoDefaultSeconds) ? config.videoDefaultSeconds : videoDurationOptions[0]);
+    }
+  }, [config.videoDefaultSeconds, videoDurationOptions, videoSeconds]);
+
+  useEffect(() => {
+    if (!videoAspectRatioOptions.includes(videoAspectRatio)) {
+      setVideoAspectRatio(videoAspectRatioOptions.includes(config.videoDefaultAspectRatio) ? config.videoDefaultAspectRatio : videoAspectRatioOptions[0]);
+    }
+  }, [config.videoDefaultAspectRatio, videoAspectRatio, videoAspectRatioOptions]);
+
+  useEffect(() => {
+    if (!videoResolutionOptions.includes(videoResolution)) {
+      setVideoResolution(videoResolutionOptions.includes(config.videoDefaultResolution) ? config.videoDefaultResolution : videoResolutionOptions[0]);
+    }
+  }, [config.videoDefaultResolution, videoResolution, videoResolutionOptions]);
+
+  useEffect(() => {
+    if (!videoPresetOptions.includes(videoPreset)) {
+      setVideoPreset(videoPresetOptions.includes(config.videoDefaultPreset) ? config.videoDefaultPreset : videoPresetOptions[0]);
+    }
+  }, [config.videoDefaultPreset, videoPreset, videoPresetOptions]);
+
+  useEffect(() => {
+    if (!videoSettingsOpen) return;
+    const frame = requestAnimationFrame(() => videoDialogRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [videoSettingsOpen]);
+
+  useEffect(() => {
+    if (!pendingHistoryScrollRef.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (messageListRef.current) messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+      else latestMessageRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+      pendingHistoryScrollRef.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeId, messages.length]);
+
   function updateConversation(id, updater) {
     setConversations((current) =>
       current
         .map((conversation) => (conversation.id === id ? updater(conversation) : conversation))
         .sort((a, b) => b.updatedAt - a.updatedAt)
     );
+  }
+
+  function handleSelectConversation(id) {
+    pendingHistoryScrollRef.current = true;
+    setActiveId(id);
+    setAttachments([]);
+    setUploadedImage(null);
+    setHistoryOpen(false);
+
+    if (id === activeConversation?.id) {
+      requestAnimationFrame(() => {
+        if (messageListRef.current) messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+        else latestMessageRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+        pendingHistoryScrollRef.current = false;
+      });
+    }
   }
 
   async function handleNewConversation() {
@@ -367,9 +457,7 @@ export default function ChatPanel({ config }) {
     });
   }
 
-  async function handleImageUpload(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  async function uploadFirstFrame(file) {
     if (!file) return;
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       setHistoryError("首帧仅支持 JPG、PNG 或 WebP 图片。");
@@ -390,7 +478,7 @@ export default function ChatPanel({ config }) {
         url: data.url,
         name: data.name || file.name,
         ...dimensions,
-        aspectWarning: Math.abs(aspectRatio - VIDEO_ASPECT_RATIO) > 0.08
+        aspectRatio
       });
       setReferenceMode("manual");
       setHistoryError("");
@@ -399,6 +487,12 @@ export default function ChatPanel({ config }) {
     } finally {
       setUploadingImage(false);
     }
+  }
+
+  async function handleImageUpload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    await uploadFirstFrame(file);
   }
 
   async function handleAttachmentFiles(files) {
@@ -441,6 +535,28 @@ export default function ChatPanel({ config }) {
     if (!files.length) return;
     event.preventDefault();
     handleAttachmentFiles(files);
+  }
+
+  function getClipboardImage(event) {
+    const directFiles = [...(event.clipboardData?.files || [])];
+    const itemFiles = [...(event.clipboardData?.items || [])]
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    return [...directFiles, ...itemFiles].find((file) => ALLOWED_IMAGE_TYPES.includes(file.type));
+  }
+
+  function handleFirstFramePaste(event) {
+    const file = getClipboardImage(event);
+    if (!file) return;
+    event.preventDefault();
+    uploadFirstFrame(file);
+  }
+
+  function handleFirstFrameDrop(event) {
+    event.preventDefault();
+    const file = [...(event.dataTransfer?.files || [])].find((item) => ALLOWED_IMAGE_TYPES.includes(item.type));
+    if (file) uploadFirstFrame(file);
   }
 
   function handleDrop(event) {
@@ -493,8 +609,8 @@ export default function ChatPanel({ config }) {
     }
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function handleSubmit(event, { forceVideo = false } = {}) {
+    event?.preventDefault();
     const typedContent = input.trim();
     const attachmentLines = attachments.map((attachment) =>
       `[附件:${attachment.kind}] ${attachment.name}\n${attachment.url}`
@@ -502,7 +618,7 @@ export default function ChatPanel({ config }) {
     const content = [
       typedContent || (attachments.length ? "请分析这些附件。" : ""),
       referenceMode === "manual" && uploadedImage
-        ? `Use this uploaded image as the first-frame/reference image for the next video:\n${uploadedImage.url}`
+        ? "Use the uploaded image as the first-frame reference for the next video."
         : "",
       ...attachmentLines
     ].filter(Boolean).join("\n\n");
@@ -547,6 +663,12 @@ export default function ChatPanel({ config }) {
         messages: nextMessages,
         attachments: submittedAttachments,
         referenceMode,
+        firstFrameUrl: referenceMode === "manual" ? uploadedImage?.url || "" : "",
+        videoSeconds,
+        videoAspectRatio,
+        videoResolution,
+        videoPreset,
+        forceVideo,
         signal: requestController.signal,
         onToken(token) {
           text += token;
@@ -637,12 +759,7 @@ export default function ChatPanel({ config }) {
                 <button
                   className="relay-history__select"
                   type="button"
-                  onClick={() => {
-                    setActiveId(conversation.id);
-                    setAttachments([]);
-                    setUploadedImage(null);
-                    setHistoryOpen(false);
-                  }}
+                  onClick={() => handleSelectConversation(conversation.id)}
                 >
                   <span>{conversation.title || DEFAULT_TITLE}</span>
                   <small>{formatTime(conversation.updatedAt)}</small>
@@ -707,19 +824,20 @@ export default function ChatPanel({ config }) {
           </label>
           <label>
             Video API
-            <input value={config.videoConfigured ? "Ready" : "Not configured"} readOnly />
+            <input value={config.videoConfigured ? `Ready · ${(config.videoDurations || [10, 12]).join("/")}s` : "Not configured"} readOnly />
           </label>
         </section>
 
         {historyError ? <p className="relay-status">{historyError}</p> : null}
 
-        <section className="relay-console__messages">
+        <section className="relay-console__messages" ref={messageListRef}>
           {decoratedMessages.map((message, index) => (
             <article
               className={`relay-message ${message.role}${
                 message.replySkin === null ? "" : ` reply-skin-${message.replySkin}`
               }`}
               key={message.id || `${message.role}-${index}`}
+              ref={index === decoratedMessages.length - 1 ? latestMessageRef : null}
             >
               <div className="relay-message__meta">
                 <span>{message.role === "user" ? "你" : "AI"}</span>
@@ -753,30 +871,6 @@ export default function ChatPanel({ config }) {
           }}
           onDrop={handleDrop}
         >
-          <div className="relay-reference-mode" role="group" aria-label="Video first frame mode">
-            <button
-              className={referenceMode === "auto" ? "active" : ""}
-              type="button"
-              onClick={() => setReferenceMode("auto")}
-            >
-              自动尾帧
-            </button>
-            <button
-              className={referenceMode === "manual" ? "active" : ""}
-              type="button"
-              onClick={() => firstFrameInputRef.current?.click()}
-              disabled={loading || uploadingImage}
-            >
-              上传首帧
-            </button>
-            <button
-              className={referenceMode === "none" ? "active" : ""}
-              type="button"
-              onClick={() => setReferenceMode("none")}
-            >
-              不使用
-            </button>
-          </div>
           <input
             ref={fileInputRef}
             className="relay-upload-input"
@@ -824,41 +918,28 @@ export default function ChatPanel({ config }) {
               ))}
             </div>
           ) : null}
-          {uploadedImage ? (
-            <div className="relay-upload-chip">
-              <img src={uploadedImage.url} alt="" />
-              <span>
-                <strong>{uploadedImage.name || "Reference image"}</strong>
-                <small>
-                  {uploadedImage.width} × {uploadedImage.height}
-                  {uploadedImage.aspectWarning ? " · 与 16:9 视频比例不一致，画面可能裁切" : " · 比例适合 16:9 视频"}
-                </small>
-              </span>
-              <button type="button" onClick={() => handleCopyMessage(uploadedImage.url)}>
-                复制链接
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setUploadedImage(null);
-                  setReferenceMode("auto");
-                }}
-                aria-label="Remove uploaded image"
-              >
-                ×
-              </button>
-            </div>
-          ) : null}
-          <button
-            className="relay-upload-button"
-            type="button"
-            disabled={loading || uploadingImage}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="Upload attachments"
-            title="上传图片、视频或文档"
-          >
-            {uploadingImage ? "..." : "+"}
-          </button>
+          <div className="relay-composer-actions">
+            <button
+              className="relay-upload-button"
+              type="button"
+              disabled={loading || uploadingImage}
+              onClick={() => fileInputRef.current?.click()}
+              aria-label="Upload attachments"
+              title="上传图片、视频或文档"
+            >
+              {uploadingImage ? "..." : "+"}
+            </button>
+            <button
+              className="relay-video-button"
+              type="button"
+              disabled={loading}
+              onClick={() => setVideoSettingsOpen(true)}
+              aria-label="视频生成设置"
+              title="视频生成设置"
+            >
+              视频
+            </button>
+          </div>
           <textarea
             ref={textareaRef}
             rows="1"
@@ -875,7 +956,6 @@ export default function ChatPanel({ config }) {
               !loading
               && !input.trim()
               && !attachments.length
-              && !(referenceMode === "manual" && uploadedImage)
             }
             aria-label={loading ? "停止当前任务" : "发送"}
             title={loading ? "先中断当前任务，再继续发送" : "发送"}
@@ -883,6 +963,123 @@ export default function ChatPanel({ config }) {
             {loading ? <span className="relay-stop-button__icon" /> : "→"}
           </button>
         </form>
+        {videoSettingsOpen ? (
+          <div className="relay-video-dialog-backdrop" role="presentation" onMouseDown={() => setVideoSettingsOpen(false)}>
+            <section
+              className="relay-video-dialog"
+              ref={videoDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="video-dialog-title"
+              tabIndex="-1"
+              onMouseDown={(event) => event.stopPropagation()}
+              onPaste={handleFirstFramePaste}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={handleFirstFrameDrop}
+            >
+              <header className="relay-video-dialog__head">
+                <div>
+                  <span>视频生成</span>
+                  <h2 id="video-dialog-title">本次视频设置</h2>
+                </div>
+                <button type="button" onClick={() => setVideoSettingsOpen(false)} aria-label="关闭视频设置">×</button>
+              </header>
+
+              <div className="relay-video-settings-grid">
+                <label>
+                  <span>模型</span>
+                  <output>{config.videoModel || "grok-imagine-video"}</output>
+                </label>
+                <label>
+                  <span>画幅</span>
+                  <select value={videoAspectRatio} onChange={(event) => setVideoAspectRatio(event.target.value)}>
+                    {videoAspectRatioOptions.map((ratio) => <option key={ratio} value={ratio}>{ratio}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>时长</span>
+                  <select value={videoSeconds} onChange={(event) => setVideoSeconds(Number(event.target.value))}>
+                    {videoDurationOptions.map((seconds) => <option key={seconds} value={seconds}>{seconds}s</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>清晰度</span>
+                  <select value={videoResolution} onChange={(event) => setVideoResolution(event.target.value)}>
+                    {videoResolutionOptions.map((resolution) => <option key={resolution} value={resolution}>{resolution.toUpperCase()}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>风格</span>
+                  <select value={videoPreset} onChange={(event) => setVideoPreset(event.target.value)}>
+                    {videoPresetOptions.map((preset) => <option key={preset} value={preset}>{preset === "custom" ? "自定义" : preset === "normal" ? "标准" : preset === "fun" ? "趣味" : "强化"}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="relay-video-reference">
+                <div className="relay-video-reference__label">首帧参考</div>
+                <div className="relay-video-reference__modes" role="group" aria-label="首帧参考模式">
+                  <button className={referenceMode === "auto" ? "active" : ""} type="button" onClick={() => setReferenceMode("auto")}>自动尾帧</button>
+                  <button className={referenceMode === "manual" ? "active" : ""} type="button" onClick={() => setReferenceMode("manual")}>上传首帧</button>
+                  <button className={referenceMode === "none" ? "active" : ""} type="button" onClick={() => setReferenceMode("none")}>不使用</button>
+                </div>
+                {referenceMode === "manual" ? (
+                  <div
+                    className="relay-first-frame-dropzone"
+                    tabIndex="0"
+                    onPaste={handleFirstFramePaste}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={handleFirstFrameDrop}
+                    onClick={() => firstFrameInputRef.current?.click()}
+                    role="button"
+                    aria-label="上传或粘贴首帧"
+                  >
+                    {uploadedImage ? (
+                      <div className="relay-first-frame-preview">
+                        <img src={uploadedImage.url} alt="首帧预览" />
+                        <span>
+                          <strong>{uploadedImage.name || "首帧图片"}</strong>
+                          <small>
+                            {uploadedImage.width} × {uploadedImage.height}
+                            {imageNeedsCropping(uploadedImage, videoAspectRatio) ? ` · 与 ${videoAspectRatio} 不一致，画面可能裁切` : ` · 比例适合 ${videoAspectRatio}`}
+                          </small>
+                        </span>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); setUploadedImage(null); }}>移除</button>
+                      </div>
+                    ) : (
+                      <>
+                        <strong>点击选择图片，或直接按 Ctrl + V 粘贴首帧</strong>
+                        <span>支持 JPG、PNG、WebP；也可以把图片拖到这里</span>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <p className="relay-video-reference__hint">
+                    {referenceMode === "auto" ? "继续已有视频时，工具会使用上一段尾帧；首次生成不会附带参考图。" : "本次视频不使用首帧或参考图。"}
+                  </p>
+                )}
+              </div>
+
+              <footer className="relay-video-dialog__foot">
+                <span>在下方输入框写内容后，点击“生成视频”。主聊天模型会先整理提示词，再调用视频接口。</span>
+                <div>
+                  <button type="button" onClick={() => setVideoSettingsOpen(false)}>仅保存设置</button>
+                  <button
+                    className="primary"
+                    type="button"
+                    disabled={loading || uploadingImage || !input.trim()}
+                    onClick={() => {
+                      setVideoSettingsOpen(false);
+                      handleSubmit(null, { forceVideo: true });
+                    }}
+                  >
+                    生成视频
+                  </button>
+                </div>
+              </footer>
+            </section>
+          </div>
+        ) : null}
       </div>
     </article>
   );
